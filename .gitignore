@@ -1,0 +1,7 @@
+# Nerves-specific
+/_build/
+/deps/
+/*.fw
+/*.burn
+/nerves/artifacts
+.env*
