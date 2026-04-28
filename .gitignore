@@ -5,3 +5,4 @@
 /*.burn
 /nerves/artifacts
 .env*
+.superpowers/
