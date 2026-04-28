@@ -53,10 +53,6 @@ defmodule NervesPhotos.MixProject do
       {:vintage_net, "~> 0.13.9"},
       {:vintage_net_wifi, "~> 0.12.8"},
 
-      # Image Processing
-    {:vix, "~> 0.28.0", targets: :rpi5},
-      {:image, "~> 0.37.0", targets: :rpi5},
-
       # UI / Scenic
     {:scenic, "~> 0.11.0"},
       {:scenic_driver_local, "~> 0.11", targets: @all_targets, make_env: %{"SCENIC_LOCAL_TARGET" => "drm"}},

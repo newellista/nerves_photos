@@ -18,7 +18,7 @@ NervesPhotos.Supervisor
 ├── NervesPhotos.ImmichClient     — album fetch, shuffle queue, photo metadata
 ├── NervesPhotos.WeatherFetcher   — IP geolocation + Open-Meteo polling
 ├── NervesPhotos.SlideTimer       — fires :next_photo on configurable interval
-├── NervesPhotos.ImageLoader      — downloads + resizes photos, pushes to Scenic asset stream
+├── NervesPhotos.ImageLoader      — fetches Immich preview, pushes to Scenic asset stream
 └── Scenic Viewport               → NervesPhotos.Scene.Main (render only)
 ```
 
@@ -31,8 +31,8 @@ Each GenServer owns a single concern. The Scenic scene is a pure renderer — it
 ### ImmichClient
 
 - On init: fetches the configured album's photo list via Immich REST API, shuffles it into a queue
-- Exposes `current/0` → `{url, %{date, location}}` for the current photo
-- Exposes `advance/0` → advances the queue index and returns the new `{url, metadata}`
+- Exposes `current/0` → `{asset_id, %{date, location}}` for the current photo
+- Exposes `advance/0` → advances the queue index and returns the new `{asset_id, metadata}`
 - When the queue is exhausted: re-fetches the album (picks up newly added photos) and re-shuffles
 - On HTTP error: sets internal state to `:disconnected`, retries with exponential backoff (1s → 2s → 4s… capped at 60s)
 
@@ -52,19 +52,17 @@ Each GenServer owns a single concern. The Scenic scene is a pure renderer — it
 
 ### ImageLoader
 
-- Called by `Scene.Main` with a photo URL
-- Downloads image bytes using `Req`
-- On RPi5: downloads full original from Immich, decodes and resizes to 1920×1080 using the `image` library (libvips)
-- On RPi0: requests a pre-resized thumbnail from the Immich API (`/api/assets/{id}/thumbnail?size=preview`) — avoids local image processing entirely
-- Pushes raw pixel data to `Scenic.Assets.Stream` under a known asset key
+- Called by `Scene.Main` with a photo asset ID
+- Requests a preview-sized image from Immich (`/api/assets/{id}/thumbnail?size=preview`) on both targets — no local image processing required
+- Pushes raw image bytes to `Scenic.Assets.Stream` under a known asset key
 - On decode error: logs via `RingLogger` and sends `{:image_load_error}` back to scene — scene advances to next photo
 
 ### Scene.Main
 
 - Subscribes to `SlideTimer` ticks via `handle_info`
 - On `:next_photo` tick:
-  1. Calls `ImmichClient.advance()` to get next `{url, metadata}`
-  2. Dispatches `ImageLoader.load(url)` asynchronously
+  1. Calls `ImmichClient.advance()` to get next `{asset_id, metadata}`
+  2. Dispatches `ImageLoader.load(asset_id)` asynchronously
   3. Initiates transition animation (see Transitions)
 - On image loaded: completes transition, updates scene graph with new photo + metadata overlay
 - On `ImmichClient` state `:disconnected`: freezes current photo, shows "Reconnecting…" badge
@@ -74,7 +72,7 @@ Each GenServer owns a single concern. The Scenic scene is a pure renderer — it
 
 ## UI Layout
 
-Full-screen 1920×1080 viewport. Three visual layers rendered as Scenic primitives:
+Full-screen viewport at the display's native resolution (auto-detected by the DRM driver). Three visual layers rendered as Scenic primitives:
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -146,3 +144,4 @@ All configuration via environment variables, loaded in `config/target.exs`, foll
 ## Future Considerations
 
 - **In-app configuration UI:** A Scenic settings scene to configure Immich URL/key/album and slide interval without needing SSH + env var changes. Not in scope for this iteration.
+``
