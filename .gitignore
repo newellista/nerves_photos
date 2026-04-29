@@ -6,3 +6,4 @@
 /nerves/artifacts
 .env*
 .superpowers/
+.worktrees/
