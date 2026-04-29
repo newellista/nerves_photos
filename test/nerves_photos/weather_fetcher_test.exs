@@ -37,8 +37,8 @@ defmodule NervesPhotos.WeatherFetcherTest do
   end
 
   test "current/0 returns ok tuple with weather data" do
-    # Allow async init to complete
-    Process.sleep(50)
+    pid = GenServer.whereis(WeatherFetcher)
+    :sys.get_state(pid)
     assert {:ok, %{temp_f: temp, condition: condition, icon_code: code}} = WeatherFetcher.current()
     assert is_float(temp) or is_integer(temp)
     assert is_binary(condition)
@@ -46,13 +46,23 @@ defmodule NervesPhotos.WeatherFetcherTest do
   end
 
   test "current/0 returns :unavailable when fetch fails" do
-    # Start an anonymous GenServer with no stub access - fetch will fail gracefully
+    test_pid = self()
+
+    Req.Test.stub(:weather_error_stub, fn conn ->
+      Plug.Conn.send_resp(conn, 500, "error")
+    end)
+
+    Req.Test.allow(:weather_error_stub, test_pid, fn -> GenServer.whereis(:weather_error_test) end)
+
     {:ok, pid} =
-      GenServer.start(WeatherFetcher, req_options: [plug: {Req.Test, WeatherFetcher}])
-    # Use :sys.get_state as synchronization barrier to wait for :fetch_weather to complete
+      start_supervised(
+        {WeatherFetcher,
+         name: :weather_error_test,
+         req_options: [plug: {Req.Test, :weather_error_stub}, retry: false]},
+        id: :weather_unavailable
+      )
+
     :sys.get_state(pid)
-    # Weather remains :unavailable because the HTTP call failed (no stub allowed)
     assert GenServer.call(pid, :current) == :unavailable
-    GenServer.stop(pid)
   end
 end

@@ -28,7 +28,8 @@ defmodule NervesPhotos.WeatherFetcher do
   }
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    name = Keyword.get(opts, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: name)
   end
 
   def current, do: GenServer.call(__MODULE__, :current)
@@ -47,18 +48,12 @@ defmodule NervesPhotos.WeatherFetcher do
   @impl true
   def handle_info(:fetch_weather, state) do
     weather =
-      try do
-        with {:ok, coords} <- geolocate(state.req_options),
-             {:ok, data} <- fetch_weather(coords, state.req_options) do
-          {:ok, data}
-        else
-          err ->
-            Logger.warning("WeatherFetcher: #{inspect(err)}")
-            :unavailable
-        end
-      rescue
-        e ->
-          Logger.warning("WeatherFetcher error: #{inspect(e)}")
+      with {:ok, coords} <- geolocate(state.req_options),
+           {:ok, data} <- fetch_weather(coords, state.req_options) do
+        {:ok, data}
+      else
+        err ->
+          Logger.warning("WeatherFetcher: #{inspect(err)}")
           :unavailable
       end
 
