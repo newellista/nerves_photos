@@ -6,11 +6,13 @@ defmodule NervesPhotos.ImmichClient do
   @backoff_max 60_000
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    name = Keyword.get(opts, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: name)
   end
 
   def current, do: GenServer.call(__MODULE__, :current)
   def advance, do: GenServer.call(__MODULE__, :advance)
+  # Returns 1-based current position (human-readable) and total count
   def queue_position, do: GenServer.call(__MODULE__, :queue_position)
 
   @impl true
@@ -46,6 +48,18 @@ defmodule NervesPhotos.ImmichClient do
     {:reply, current_photo(state), state}
   end
 
+  def handle_call(:advance, _from, %{queue: [], status: :disconnected} = state) do
+    {:reply, :disconnected, state}
+  end
+
+  def handle_call(:advance, _from, %{queue: [], status: :empty} = state) do
+    {:reply, :empty, state}
+  end
+
+  def handle_call(:advance, _from, %{queue: []} = state) do
+    {:reply, :loading, state}
+  end
+
   def handle_call(:advance, _from, state) do
     next_index = state.index + 1
 
@@ -79,7 +93,8 @@ defmodule NervesPhotos.ImmichClient do
         Logger.warning("ImmichClient: fetch failed: #{inspect(reason)}")
         backoff = Map.get(state, :backoff, @backoff_initial)
         Process.send_after(self(), :fetch_album, backoff)
-        {:noreply, %{state | status: :disconnected, backoff: min(backoff * 2, @backoff_max)}}
+        new_state = state |> Map.put(:status, :disconnected) |> Map.put(:backoff, min(backoff * 2, @backoff_max))
+        {:noreply, new_state}
     end
   end
 

@@ -72,4 +72,66 @@ defmodule NervesPhotos.ImmichClientTest do
     {_index, total} = ImmichClient.queue_position()
     assert total == 2
   end
+
+  test "current/0 returns :empty when album has no assets" do
+    test_pid = self()
+
+    Req.Test.stub(ImmichClientEmptyStub, fn conn ->
+      Req.Test.json(conn, %{"assets" => []})
+    end)
+
+    # Register the allowance lazily using a unique atom name so the GenServer
+    # process can look itself up before making the first HTTP request.
+    Req.Test.allow(ImmichClientEmptyStub, test_pid, fn ->
+      GenServer.whereis(ImmichClientEmpty)
+    end)
+
+    {:ok, _pid} =
+      start_supervised(
+        {ImmichClient,
+         url: "http://immich.test",
+         api_key: "test-key",
+         album_id: "album-empty",
+         name: ImmichClientEmpty,
+         req_options: [plug: {Req.Test, ImmichClientEmptyStub}]},
+        id: :empty_client
+      )
+
+    # Flush the mailbox so :fetch_album has been processed
+    pid = GenServer.whereis(ImmichClientEmpty)
+    :sys.get_state(pid)
+
+    assert GenServer.call(pid, :current) == :empty
+  end
+
+  test "current/0 returns :disconnected when Immich returns HTTP 500" do
+    test_pid = self()
+
+    Req.Test.stub(ImmichClientErrorStub, fn conn ->
+      Plug.Conn.send_resp(conn, 500, "Internal Server Error")
+    end)
+
+    # Register the allowance lazily using a unique atom name so the GenServer
+    # process can look itself up before making the first HTTP request.
+    Req.Test.allow(ImmichClientErrorStub, test_pid, fn ->
+      GenServer.whereis(ImmichClientError)
+    end)
+
+    {:ok, _pid} =
+      start_supervised(
+        {ImmichClient,
+         url: "http://immich.test",
+         api_key: "test-key",
+         album_id: "album-error",
+         name: ImmichClientError,
+         req_options: [plug: {Req.Test, ImmichClientErrorStub}, retry: false]},
+        id: :error_client
+      )
+
+    # Flush the mailbox so :fetch_album has been processed
+    pid = GenServer.whereis(ImmichClientError)
+    :sys.get_state(pid)
+
+    assert GenServer.call(pid, :current) == :disconnected
+  end
 end
