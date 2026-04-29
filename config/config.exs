@@ -21,7 +21,7 @@ config :nerves, source_date_epoch: "1777414603"
 config :nerves_photos, :viewport, %{
   name: :main_viewport,
   size: {1920, 1080},
-  default_scene: NervesPhoto.Scene.Main,
+  default_scene: NervesPhotos.Scene.Main,
   drivers: [
     module: Scenic.Driver.Local,
     opts: [device: "/dev/fb0"]
@@ -32,4 +32,8 @@ if Mix.target() == :host do
   import_config "host.exs"
 else
   import_config "target.exs"
+end
+
+if Mix.env() == :test do
+  import_config "test.exs"
 end

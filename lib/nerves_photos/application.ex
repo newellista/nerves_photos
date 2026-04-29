@@ -1,43 +1,39 @@
 defmodule NervesPhotos.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
   @moduledoc false
 
   use Application
 
   @impl true
   def start(_type, _args) do
-    children =
-      [
-        # Children for all targets
-        # Starts a worker by calling: NervesPhotos.Worker.start_link(arg)
-        # {NervesPhotos.Worker, arg},
-      ] ++ target_children()
-
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
+    children = target_children()
     opts = [strategy: :one_for_one, name: NervesPhotos.Supervisor]
     Supervisor.start_link(children, opts)
   end
 
-  # List all child processes to be supervised
-  if Mix.target() == :host do
-    defp target_children() do
-      [
-        # Children that only run on the host during development or test.
-        # In general, prefer using `config/host.exs` for differences.
-        #
-        # Starts a worker by calling: Host.Worker.start_link(arg)
-        # {Host.Worker, arg},
-      ]
-    end
-  else
-    defp target_children() do
-      [
-        # Children for all targets except host
-        # Starts a worker by calling: Target.Worker.start_link(arg)
-        # {Target.Worker, arg},
-      ]
-    end
+  cond do
+    Mix.env() == :test ->
+      defp target_children, do: []
+
+    Mix.target() == :host ->
+      defp target_children do
+        [
+          NervesPhotos.ImmichClient,
+          NervesPhotos.WeatherFetcher,
+          NervesPhotos.SlideTimer
+        ]
+      end
+
+    true ->
+      defp target_children do
+        viewport_config = Application.get_env(:nerves_photos, :viewport)
+
+        [
+          NervesPhotos.ImmichClient,
+          NervesPhotos.WeatherFetcher,
+          NervesPhotos.ImageLoader,
+          NervesPhotos.SlideTimer,
+          {Scenic, [viewport_config]}
+        ]
+      end
   end
 end
