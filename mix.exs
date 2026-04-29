@@ -62,7 +62,10 @@ defmodule NervesPhotos.MixProject do
       # version updates, please review their release notes in case
       # changes to your application are needed.
       {:nerves_system_rpi0, "~> 2.0", runtime: false, targets: :rpi0},
-      {:nerves_system_rpi5, "~> 2.0", runtime: false, targets: :rpi5}
+      {:nerves_system_rpi5, "~> 2.0", runtime: false, targets: :rpi5},
+
+      # Test / Dev dependencies
+      {:plug, "~> 1.0", only: [:dev, :test]}
       ]
   end
 
