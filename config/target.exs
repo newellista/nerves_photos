@@ -109,6 +109,13 @@ config :mdns_lite,
     }
   ]
 
+config :nerves_photos,
+  immich_url: System.get_env("IMMICH_URL"),
+  immich_api_key: System.get_env("IMMICH_API_KEY"),
+  immich_album_id: System.get_env("IMMICH_ALBUM_ID"),
+  slide_interval_ms: String.to_integer(System.get_env("SLIDE_INTERVAL_MS", "30000")),
+  show_debug: System.get_env("SHOW_DEBUG", "false") == "true"
+
 # Import target specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 # Uncomment to use target specific configurations
