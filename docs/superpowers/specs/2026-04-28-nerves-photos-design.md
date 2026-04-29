@@ -33,6 +33,7 @@ Each GenServer owns a single concern. The Scenic scene is a pure renderer — it
 - On init: fetches the configured album's photo list via Immich REST API, shuffles it into a queue
 - Exposes `current/0` → `{asset_id, %{date, location}}` for the current photo
 - Exposes `advance/0` → advances the queue index and returns the new `{asset_id, metadata}`
+- Exposes `queue_position/0` → `{current_index, total}` for the debug overlay
 - When the queue is exhausted: re-fetches the album (picks up newly added photos) and re-shuffles
 - On HTTP error: sets internal state to `:disconnected`, retries with exponential backoff (1s → 2s → 4s… capped at 60s)
 
@@ -95,6 +96,8 @@ Full-screen viewport at the display's native resolution (auto-detected by the DR
 
 **Reconnecting badge:** semi-transparent pill at top-center, visible only when `ImmichClient` is in `:disconnected` state.
 
+**Debug bar:** when `SHOW_DEBUG=true` is set, a small semi-transparent badge is shown at bottom-center displaying the current position in the queue as `{current}/{total}` (e.g. `23/193`). Hidden otherwise. Controlled at compile time via `config/target.exs`.
+
 ---
 
 ## Photo Transitions
@@ -125,6 +128,7 @@ All configuration via environment variables, loaded in `config/target.exs`, foll
 | `IMMICH_API_KEY` | Immich API key | required |
 | `IMMICH_ALBUM_ID` | Album ID to display | required |
 | `SLIDE_INTERVAL_MS` | Milliseconds between photos | `30000` |
+| `SHOW_DEBUG` | Show queue position badge (`true`/`false`) | `false` |
 
 ---
 
