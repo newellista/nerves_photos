@@ -32,6 +32,12 @@ defmodule NervesPhotos.MixProject do
     [preferred_targets: [run: :host, test: :host]]
   end
 
+  def aliases do
+    [
+      "deps.get": ["deps.get", "cmd patch --forward -p1 -d deps/scenic_driver_local < patches/scenic_driver_local.patch || true"]
+    ]
+  end
+
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [

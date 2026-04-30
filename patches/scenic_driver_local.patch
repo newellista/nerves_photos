@@ -1,0 +1,9 @@
+--- a/Makefile
++++ b/Makefile
+@@ -71,7 +71,7 @@ else ifeq ($(SCENIC_LOCAL_TARGET),bcm)
+ else ifeq ($(SCENIC_LOCAL_TARGET),drm)
+ 	# drm is the forward looking default
+-	LDFLAGS += -lGLESv2 -lEGL -lm -lvchostif -ldrm -lgbm
++	LDFLAGS += -lGLESv2 -lEGL -lm -ldrm -lgbm
+ 	CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter -pedantic
+ 	CFLAGS += -std=gnu99
