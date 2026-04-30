@@ -31,7 +31,7 @@
 | `test/nerves_photos/slide_timer_test.exs` | Unit tests for SlideTimer |
 | `test/nerves_photos/image_loader_test.exs` | Unit tests for ImageLoader |
 | `lib/nerves_photos/settings_store.ex` | GenServer: read/write settings to `/data` partition |
-| `lib/nerves_photos/settings_router.ex` | Plug router: GET/POST `/settings` form + GET `/screenshot` BMP capture |
+| `lib/nerves_photos/settings_router.ex` | Plug router: GET/POST `/settings` form; Task 12 adds GET `/screenshot` |
 | `lib/nerves_photos/settings_server.ex` | Cowboy HTTP listener on port 80 |
 | `test/nerves_photos/settings_store_test.exs` | Unit tests for SettingsStore |
 
@@ -1497,8 +1497,6 @@ git commit -m "feat: NervesPhotos photo frame — complete implementation"
 
 Allow changing Immich URL, API key, album, slide interval, and WiFi credentials from a browser on the same network, reachable at `http://nerves.local/settings`. Settings are persisted to the data partition and applied on reboot.
 
-Also exposes `GET /screenshot` which reads `/dev/fb0` and returns a BMP image of the current screen — useful for verifying the display without an HDMI connection. Requires `fbdev` emulation to be active (default on `nerves_system_rpi5` via `drm_kms_helper`).
-
 **New dependencies to add to `mix.exs`:**
 
 ```elixir
@@ -1711,59 +1709,8 @@ defmodule NervesPhotos.SettingsRouter do
     |> send_resp(303, "")
   end
 
-  get "/screenshot" do
-    case capture_screenshot() do
-      {:ok, bmp} ->
-        conn
-        |> put_resp_content_type("image/bmp")
-        |> send_resp(200, bmp)
-
-      {:error, reason} ->
-        send_resp(conn, 500, "screenshot unavailable: #{inspect(reason)}")
-    end
-  end
-
   match _ do
     send_resp(conn, 404, "not found")
-  end
-
-  # Reads /dev/fb0 (fbdev emulation over DRM) and wraps it in a BMP envelope.
-  # The RPi5 framebuffer is XRGB8888: bytes [B, G, R, X] per pixel — which
-  # matches BMP 32bpp BGRA layout (X treated as alpha=0), so no byte-swapping
-  # is needed.
-  defp capture_screenshot do
-    with {:ok, size_str} <- File.read("/sys/class/graphics/fb0/virtual_size"),
-         [w_str, h_str] = String.split(String.trim(size_str), ","),
-         {width, ""} <- Integer.parse(w_str),
-         {height, ""} <- Integer.parse(h_str),
-         {:ok, pixels} <- File.read("/dev/fb0") do
-      {:ok, build_bmp(pixels, width, height)}
-    end
-  end
-
-  defp build_bmp(pixels, width, height) do
-    pixel_data_size = byte_size(pixels)
-    file_size = 14 + 40 + pixel_data_size
-
-    file_header =
-      "BM" <>
-        <<file_size::little-32, 0::32, 54::little-32>>
-
-    dib_header =
-      <<40::little-32,
-        width::little-32,
-        # negative height = top-down row order
-        (-height)::little-signed-32,
-        1::little-16,
-        32::little-16,
-        0::little-32,
-        pixel_data_size::little-32,
-        2835::little-32,
-        2835::little-32,
-        0::little-32,
-        0::little-32>>
-
-    file_header <> dib_header <> pixels
   end
 
   defp render_form(s) do
@@ -1891,4 +1838,92 @@ git add lib/nerves_photos/settings_store.ex \
         config/target.exs \
         test/nerves_photos/settings_store_test.exs
 git commit -m "feat: add web settings UI served at nerves.local/settings"
+```
+
+---
+
+## Task 12: Screenshot endpoint (`GET /screenshot`)
+
+Add `GET /screenshot` to the existing `SettingsRouter`. The endpoint reads `/dev/fb0` (fbdev emulation layer over DRM, active by default on `nerves_system_rpi5` via `drm_kms_helper`), wraps the raw pixels in a BMP envelope, and returns `image/bmp`. No new dependencies — pure Elixir binary construction.
+
+Visiting `http://nerves.local/screenshot` in a browser shows a live snapshot of the screen without needing an HDMI connection.
+
+**Files:**
+- Modify: `lib/nerves_photos/settings_router.ex` — add `GET /screenshot` route + private helpers
+
+**How it works:**
+- `/sys/class/graphics/fb0/virtual_size` gives `"width,height\n"`
+- `/dev/fb0` gives raw pixels in XRGB8888 format: bytes `[B, G, R, X]` per pixel
+- BMP 32bpp BGRA has the same layout (`X` channel treated as alpha=0), so no byte-swapping needed
+- A 14-byte file header + 40-byte DIB header prefix the raw pixel data
+
+- [ ] **Step 1: Add the `/screenshot` route to `SettingsRouter`**
+
+In `lib/nerves_photos/settings_router.ex`, add before the `match _` catch-all:
+
+```elixir
+get "/screenshot" do
+  case capture_screenshot() do
+    {:ok, bmp} ->
+      conn
+      |> put_resp_content_type("image/bmp")
+      |> send_resp(200, bmp)
+
+    {:error, reason} ->
+      send_resp(conn, 500, "screenshot unavailable: #{inspect(reason)}")
+  end
+end
+```
+
+Add private helpers at the bottom of the module (before the closing `end`):
+
+```elixir
+defp capture_screenshot do
+  with {:ok, size_str} <- File.read("/sys/class/graphics/fb0/virtual_size"),
+       [w_str, h_str] = String.split(String.trim(size_str), ","),
+       {width, ""} <- Integer.parse(w_str),
+       {height, ""} <- Integer.parse(h_str),
+       {:ok, pixels} <- File.read("/dev/fb0") do
+    {:ok, build_bmp(pixels, width, height)}
+  end
+end
+
+defp build_bmp(pixels, width, height) do
+  pixel_data_size = byte_size(pixels)
+  file_size = 14 + 40 + pixel_data_size
+
+  file_header =
+    "BM" <>
+      <<file_size::little-32, 0::32, 54::little-32>>
+
+  dib_header =
+    <<40::little-32,
+      width::little-32,
+      (-height)::little-signed-32,
+      1::little-16,
+      32::little-16,
+      0::little-32,
+      pixel_data_size::little-32,
+      2835::little-32,
+      2835::little-32,
+      0::little-32,
+      0::little-32>>
+
+  file_header <> dib_header <> pixels
+end
+```
+
+- [ ] **Step 2: Run full test suite to confirm no regressions**
+
+```bash
+MIX_TARGET=host mix test
+```
+
+Expected: all tests pass.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add lib/nerves_photos/settings_router.ex
+git commit -m "feat: add GET /screenshot endpoint returning BMP of framebuffer"
 ```
