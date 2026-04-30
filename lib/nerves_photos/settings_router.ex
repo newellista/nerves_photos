@@ -7,7 +7,11 @@ defmodule NervesPhotos.SettingsRouter do
 
   get "/settings" do
     settings = NervesPhotos.SettingsStore.all()
-    send_resp(conn, 200, render_form(settings))
+    wifi_mode =
+      if pid = Process.whereis(NervesPhotos.ConnectivityMonitor) do
+        GenServer.call(pid, :mode)
+      end
+    send_resp(conn, 200, render_form(settings, wifi_mode))
   end
 
   post "/settings" do
@@ -30,11 +34,9 @@ defmodule NervesPhotos.SettingsRouter do
       psk = params["wifi_psk"] || ""
       NervesPhotos.SettingsStore.put(:wifi_ssid, ssid)
       NervesPhotos.SettingsStore.put(:wifi_psk, psk)
-      VintageNet.configure("wlan0", %{
-        type: VintageNetWiFi,
-        vintage_net_wifi: %{networks: [%{ssid: ssid, psk: psk, key_mgmt: :wpa_psk}]},
-        ipv4: %{method: :dhcp}
-      })
+      if pid = Process.whereis(NervesPhotos.ConnectivityMonitor) do
+        GenServer.cast(pid, {:connect, ssid, psk})
+      end
     end
 
     for mod <- [NervesPhotos.ImmichClient, NervesPhotos.WeatherFetcher, NervesPhotos.SlideTimer] do
@@ -50,8 +52,29 @@ defmodule NervesPhotos.SettingsRouter do
     send_resp(conn, 404, "not found")
   end
 
-  defp render_form(s) do
+  defp render_form(s, wifi_mode) do
     interval_s = div(Map.get(s, :slide_interval_ms, 30_000), 1_000)
+
+    wifi_banner =
+      case wifi_mode do
+        :ap ->
+          """
+          <div class="banner banner-warn">
+            Setup mode active. Connect to WiFi network <strong>NervesPhotos-Setup</strong>
+            and visit <strong>http://192.168.4.1/settings</strong> to configure.
+          </div>
+          """
+
+        :connecting ->
+          "<div class=\"banner banner-info\">Connecting to WiFi&hellip;</div>"
+
+        :client ->
+          "<div class=\"banner banner-ok\">WiFi connected.</div>"
+
+        _ ->
+          ""
+      end
+
     """
     <!DOCTYPE html>
     <html>
@@ -64,10 +87,15 @@ defmodule NervesPhotos.SettingsRouter do
       button { margin-top: 24px; width: 100%; padding: 12px; background: #2563eb; color: white;
                border: none; font-size: 16px; cursor: pointer; }
       h2 { margin-top: 32px; font-size: 16px; color: #888; text-transform: uppercase; }
+      .banner { padding: 12px; border-radius: 4px; margin-bottom: 16px; font-size: 14px; }
+      .banner-warn { background: #fef3c7; color: #92400e; }
+      .banner-info { background: #dbeafe; color: #1e40af; }
+      .banner-ok   { background: #d1fae5; color: #065f46; }
     </style>
     </head>
     <body>
     <h1>NervesPhotos Settings</h1>
+    #{wifi_banner}
     <form method="POST" action="/settings">
       <h2>Immich</h2>
       <label>Server URL

@@ -28,6 +28,7 @@ defmodule NervesPhotos.Application do
       defp target_children do
         core = [
           NervesPhotos.SettingsStore,
+          NervesPhotos.ConnectivityMonitor,
           NervesPhotos.SettingsServer,
           NervesPhotos.ImmichClient,
           NervesPhotos.WeatherFetcher,
