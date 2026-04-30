@@ -55,7 +55,7 @@ defmodule NervesPhotos.MixProject do
 
       # UI / Scenic
     {:scenic, "~> 0.11.0"},
-      {:scenic_driver_local, "~> 0.11", targets: @all_targets, make_env: %{"SCENIC_LOCAL_TARGET" => "drm"}},
+      {:scenic_driver_local, "~> 0.11", targets: @all_targets, make_env: %{"SCENIC_LOCAL_TARGET" => "drm", "SCENIC_LOCAL_GL" => "gles3"}},
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
