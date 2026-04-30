@@ -18,18 +18,23 @@ defmodule NervesPhotos.ConnectivityMonitor do
 
   @impl true
   def init(_opts) do
+    send(self(), :configure_wifi)
+    {:ok, %{mode: :initializing, connect_timer: nil}}
+  end
+
+  def handle_info(:configure_wifi, state) do
     VintageNet.subscribe(["interface", "wlan0", "connection"])
 
     case NervesPhotos.SettingsStore.get(:wifi_ssid) do
       ssid when ssid in [nil, ""] ->
         apply_ap_mode()
-        {:ok, %{mode: :ap, connect_timer: nil}}
+        {:noreply, %{state | mode: :ap}}
 
       ssid ->
         psk = NervesPhotos.SettingsStore.get(:wifi_psk) || ""
         apply_client_mode(ssid, psk)
         timer = Process.send_after(self(), :connect_timeout, @connect_timeout_ms)
-        {:ok, %{mode: :connecting, connect_timer: timer}}
+        {:noreply, %{state | mode: :connecting, connect_timer: timer}}
     end
   end
 
