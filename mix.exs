@@ -82,20 +82,20 @@ defmodule NervesPhotos.MixProject do
   end
 
   defp setup_nerves_env() do
-  # Check if we are targeting rpi0 AND if the Nerves.Env module is loaded
-    if System.get_env("MIX_TARGET") == "rpi0" and Code.ensure_loaded?(Nerves.Env) do
-      System.put_env("SCENIC_LOCAL_TARGET", "drm")
+    case System.get_env("MIX_TARGET") do
+      "rpi5" ->
+        System.put_env("SCENIC_LOCAL_TARGET", "drm")
+        System.put_env("SCENIC_LOCAL_GL", "gles3")
 
-    # Use the function/1 version to ensure it handles the target correctly
-      system_path = Nerves.Env.system_path(:rpi0)
+      "rpi4" ->
+        System.put_env("SCENIC_LOCAL_TARGET", "drm")
+        System.put_env("SCENIC_LOCAL_GL", "gles3")
 
-      if system_path && File.exists?(system_path) do
-        libdrm_path = Path.join([system_path, "staging", "usr", "include", "libdrm"])
+      "rpi0" ->
+        System.put_env("SCENIC_LOCAL_TARGET", "drm")
 
-        current_cflags = System.get_env("CFLAGS") || ""
-        System.put_env("CFLAGS", "#{current_cflags} -I#{libdrm_path}")
-        System.put_env("ERL_CFLAGS", "-I#{libdrm_path}")
-      end
+      _ ->
+        :ok
     end
   end
 
