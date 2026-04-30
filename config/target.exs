@@ -119,7 +119,8 @@ config :nerves_photos,
   immich_api_key: System.get_env("IMMICH_API_KEY"),
   immich_album_id: System.get_env("IMMICH_ALBUM_ID"),
   slide_interval_ms: System.get_env("SLIDE_INTERVAL_MS", "30000") |> String.trim() |> String.to_integer(),
-  show_debug: System.get_env("SHOW_DEBUG", "false") == "true"
+  show_debug: System.get_env("SHOW_DEBUG", "false") == "true",
+  headless_mode: System.get_env("HEADLESS_MODE", "false") == "true"
 
 # Import target specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

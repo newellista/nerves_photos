@@ -26,17 +26,20 @@ defmodule NervesPhotos.Application do
 
     true ->
       defp target_children do
-        viewport_config = Application.get_env(:nerves_photos, :viewport)
-
-        [
+        core = [
           NervesPhotos.SettingsStore,
           NervesPhotos.SettingsServer,
           NervesPhotos.ImmichClient,
           NervesPhotos.WeatherFetcher,
-          NervesPhotos.ImageLoader,
-          NervesPhotos.SlideTimer,
-          {Scenic, [viewport_config]}
+          NervesPhotos.SlideTimer
         ]
+
+        if Application.get_env(:nerves_photos, :headless_mode, false) do
+          core ++ [NervesPhotos.Scene.Headless]
+        else
+          viewport_config = Application.get_env(:nerves_photos, :viewport)
+          core ++ [NervesPhotos.ImageLoader, {Scenic, [viewport_config]}]
+        end
       end
   end
 end
