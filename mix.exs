@@ -70,8 +70,9 @@ defmodule NervesPhotos.MixProject do
       {:nerves_system_rpi0, "~> 2.0", runtime: false, targets: :rpi0},
       {:nerves_system_rpi5, "~> 2.0", runtime: false, targets: :rpi5},
 
-      # Test / Dev dependencies
-      {:plug, "~> 1.0", only: [:dev, :test]}
+      # Web settings UI
+      {:plug, "~> 1.0"},
+      {:plug_cowboy, "~> 2.7"}
       ]
   end
 

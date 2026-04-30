@@ -1,0 +1,64 @@
+defmodule NervesPhotos.SettingsStore do
+  use GenServer
+
+  @keys [:immich_url, :immich_api_key, :immich_album_id, :slide_interval_ms,
+         :wifi_ssid, :wifi_psk]
+  @default_path "/data/nerves_photos/settings.json"
+
+  def start_link(opts \\ []) do
+    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  def get(key), do: GenServer.call(__MODULE__, {:get, key})
+  def put(key, value), do: GenServer.call(__MODULE__, {:put, key, value})
+  def all, do: GenServer.call(__MODULE__, :all)
+
+  @impl true
+  def init(opts) do
+    path = opts[:path] || @default_path
+    settings = load(path)
+    {:ok, %{path: path, settings: settings}}
+  end
+
+  @impl true
+  def handle_call({:get, key}, _from, state) do
+    {:reply, Map.get(state.settings, key), state}
+  end
+
+  def handle_call({:put, key, value}, _from, state) when key in @keys do
+    settings = Map.put(state.settings, key, value)
+    :ok = persist(state.path, settings)
+    {:reply, :ok, %{state | settings: settings}}
+  end
+
+  def handle_call(:all, _from, state) do
+    {:reply, state.settings, state}
+  end
+
+  defp load(path) do
+    defaults = %{
+      immich_url: Application.get_env(:nerves_photos, :immich_url),
+      immich_api_key: Application.get_env(:nerves_photos, :immich_api_key),
+      immich_album_id: Application.get_env(:nerves_photos, :immich_album_id),
+      slide_interval_ms: Application.get_env(:nerves_photos, :slide_interval_ms, 30_000),
+      wifi_ssid: nil,
+      wifi_psk: nil
+    }
+
+    case File.read(path) do
+      {:ok, json} ->
+        saved =
+          Jason.decode!(json, keys: :atoms)
+          |> Map.take(@keys)
+        Map.merge(defaults, saved)
+
+      {:error, :enoent} ->
+        defaults
+    end
+  end
+
+  defp persist(path, settings) do
+    path |> Path.dirname() |> File.mkdir_p!()
+    File.write!(path, Jason.encode!(settings))
+  end
+end

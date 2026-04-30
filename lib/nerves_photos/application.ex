@@ -17,6 +17,7 @@ defmodule NervesPhotos.Application do
     Mix.target() == :host ->
       defp target_children do
         [
+          NervesPhotos.SettingsStore,
           NervesPhotos.ImmichClient,
           NervesPhotos.WeatherFetcher,
           NervesPhotos.SlideTimer
@@ -28,6 +29,8 @@ defmodule NervesPhotos.Application do
         viewport_config = Application.get_env(:nerves_photos, :viewport)
 
         [
+          NervesPhotos.SettingsStore,
+          NervesPhotos.SettingsServer,
           NervesPhotos.ImmichClient,
           NervesPhotos.WeatherFetcher,
           NervesPhotos.ImageLoader,
