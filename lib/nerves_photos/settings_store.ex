@@ -27,8 +27,14 @@ defmodule NervesPhotos.SettingsStore do
 
   def handle_call({:put, key, value}, _from, state) when key in @keys do
     settings = Map.put(state.settings, key, value)
-    :ok = persist(state.path, settings)
-    {:reply, :ok, %{state | settings: settings}}
+    case persist(state.path, settings) do
+      :ok -> {:reply, :ok, %{state | settings: settings}}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:put, _key, _value}, _from, state) do
+    {:reply, {:error, :unknown_key}, state}
   end
 
   def handle_call(:all, _from, state) do
@@ -47,18 +53,19 @@ defmodule NervesPhotos.SettingsStore do
 
     case File.read(path) do
       {:ok, json} ->
-        saved =
-          Jason.decode!(json, keys: :atoms)
-          |> Map.take(@keys)
-        Map.merge(defaults, saved)
+        case Jason.decode(json, keys: :atoms) do
+          {:ok, saved} -> Map.merge(defaults, Map.take(saved, @keys))
+          {:error, _} -> defaults
+        end
 
-      {:error, :enoent} ->
+      {:error, _} ->
         defaults
     end
   end
 
   defp persist(path, settings) do
-    path |> Path.dirname() |> File.mkdir_p!()
-    File.write!(path, Jason.encode!(settings))
+    with :ok <- File.mkdir_p(Path.dirname(path)) do
+      File.write(path, Jason.encode!(settings))
+    end
   end
 end

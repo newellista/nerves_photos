@@ -1,5 +1,5 @@
 defmodule NervesPhotos.SettingsStoreTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case
 
   alias NervesPhotos.SettingsStore
 

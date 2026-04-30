@@ -19,7 +19,7 @@ defmodule NervesPhotos.SettingsRouter do
 
     if interval = params["slide_interval_ms"] do
       case Integer.parse(interval) do
-        {ms, ""} when ms > 0 -> NervesPhotos.SettingsStore.put(:slide_interval_ms, ms)
+        {s, ""} when s > 0 -> NervesPhotos.SettingsStore.put(:slide_interval_ms, s * 1_000)
         _ -> nil
       end
     end
@@ -65,13 +65,13 @@ defmodule NervesPhotos.SettingsRouter do
     <form method="POST" action="/settings">
       <h2>Immich</h2>
       <label>Server URL
-        <input name="immich_url" value="#{Map.get(s, :immich_url, "")}">
+        <input name="immich_url" value="#{Map.get(s, :immich_url) || ""}">
       </label>
       <label>API Key
-        <input name="immich_api_key" value="#{Map.get(s, :immich_api_key, "")}">
+        <input name="immich_api_key" value="#{Map.get(s, :immich_api_key) || ""}">
       </label>
       <label>Album ID
-        <input name="immich_album_id" value="#{Map.get(s, :immich_album_id, "")}">
+        <input name="immich_album_id" value="#{Map.get(s, :immich_album_id) || ""}">
       </label>
       <h2>Display</h2>
       <label>Slide interval (seconds)
@@ -79,7 +79,7 @@ defmodule NervesPhotos.SettingsRouter do
       </label>
       <h2>WiFi</h2>
       <label>SSID
-        <input name="wifi_ssid" value="#{Map.get(s, :wifi_ssid, "")}">
+        <input name="wifi_ssid" value="#{Map.get(s, :wifi_ssid) || ""}">
       </label>
       <label>Password
         <input name="wifi_psk" type="password">
