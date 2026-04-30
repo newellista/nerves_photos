@@ -65,6 +65,8 @@ defmodule NervesPhotos.IntegrationTest do
       GenServer.whereis(NervesPhotos.WeatherFetcher)
     end)
 
+    start_supervised!(NervesPhotos.SettingsStore)
+
     start_supervised!(
       {NervesPhotos.ImmichClient,
        req_options: [plug: {Req.Test, NervesPhotos.ImmichClient}]}

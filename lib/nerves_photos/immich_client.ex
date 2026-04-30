@@ -18,9 +18,9 @@ defmodule NervesPhotos.ImmichClient do
   @impl true
   def init(opts) do
     state = %{
-      url: opts[:url] || Application.fetch_env!(:nerves_photos, :immich_url),
-      api_key: opts[:api_key] || Application.fetch_env!(:nerves_photos, :immich_api_key),
-      album_id: opts[:album_id] || Application.fetch_env!(:nerves_photos, :immich_album_id),
+      url: opts[:url] || NervesPhotos.SettingsStore.get(:immich_url),
+      api_key: opts[:api_key] || NervesPhotos.SettingsStore.get(:immich_api_key),
+      album_id: opts[:album_id] || NervesPhotos.SettingsStore.get(:immich_album_id),
       req_options: opts[:req_options] || [],
       queue: [],
       index: 0,

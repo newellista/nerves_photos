@@ -7,7 +7,7 @@ defmodule NervesPhotos.SlideTimer do
 
   @impl true
   def init(opts) do
-    interval = opts[:interval_ms] || Application.get_env(:nerves_photos, :slide_interval_ms, 30_000)
+    interval = opts[:interval_ms] || NervesPhotos.SettingsStore.get(:slide_interval_ms) || 30_000
     target = opts[:target] || NervesPhotos.Scene.Main
     schedule(interval)
     {:ok, %{interval: interval, target: target}}

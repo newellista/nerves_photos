@@ -16,8 +16,8 @@ defmodule NervesPhotos.ImageLoader do
   def init(opts) do
     {:ok,
      %{
-       url: opts[:url] || Application.fetch_env!(:nerves_photos, :immich_url),
-       api_key: opts[:api_key] || Application.fetch_env!(:nerves_photos, :immich_api_key),
+       url: opts[:url] || NervesPhotos.SettingsStore.get(:immich_url),
+       api_key: opts[:api_key] || NervesPhotos.SettingsStore.get(:immich_api_key),
        req_options: opts[:req_options] || [],
        put_fn: opts[:put_fn] || &stream_put/2
      }}
