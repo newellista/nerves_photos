@@ -30,6 +30,10 @@
 | `test/nerves_photos/weather_fetcher_test.exs` | Unit tests for WeatherFetcher |
 | `test/nerves_photos/slide_timer_test.exs` | Unit tests for SlideTimer |
 | `test/nerves_photos/image_loader_test.exs` | Unit tests for ImageLoader |
+| `lib/nerves_photos/settings_store.ex` | GenServer: read/write settings to `/data` partition |
+| `lib/nerves_photos/settings_router.ex` | Plug router: GET/POST `/settings` form + GET `/screenshot` BMP capture |
+| `lib/nerves_photos/settings_server.ex` | Cowboy HTTP listener on port 80 |
+| `test/nerves_photos/settings_store_test.exs` | Unit tests for SettingsStore |
 
 ---
 
@@ -1485,4 +1489,406 @@ Expected: no errors.
 ```bash
 git add -A
 git commit -m "feat: NervesPhotos photo frame — complete implementation"
+```
+
+---
+
+## Task 11: Web settings UI (Plug + mDNS)
+
+Allow changing Immich URL, API key, album, slide interval, and WiFi credentials from a browser on the same network, reachable at `http://nerves.local/settings`. Settings are persisted to the data partition and applied on reboot.
+
+Also exposes `GET /screenshot` which reads `/dev/fb0` and returns a BMP image of the current screen — useful for verifying the display without an HDMI connection. Requires `fbdev` emulation to be active (default on `nerves_system_rpi5` via `drm_kms_helper`).
+
+**New dependencies to add to `mix.exs`:**
+
+```elixir
+{:plug_cowboy, "~> 2.7"},
+```
+
+`mdns_lite` is already included in the project (it advertises SSH). A new `_http._tcp` service entry just needs to be added to its config.
+
+**Files:**
+- Create: `lib/nerves_photos/settings_server.ex` — Cowboy HTTP listener
+- Create: `lib/nerves_photos/settings_router.ex` — Plug router (GET/POST `/settings`)
+- Create: `lib/nerves_photos/settings_store.ex` — read/write settings to `/data/nerves_photos/settings.json`
+- Modify: `lib/nerves_photos/application.ex` — add `SettingsServer` to supervisor (target only)
+- Modify: `config/target.exs` — advertise `_http._tcp` port 80 via `mdns_lite`
+
+**Settings persisted (JSON on `/data` partition):**
+
+| Key | Description |
+|---|---|
+| `immich_url` | Base URL of Immich server |
+| `immich_api_key` | Immich API key |
+| `immich_album_id` | Album UUID |
+| `slide_interval_ms` | Milliseconds between photos |
+| `wifi_ssid` | WiFi network name |
+| `wifi_psk` | WiFi password |
+
+**At runtime:** `SettingsStore` is the authoritative source for settings. On startup it reads from `/data/nerves_photos/settings.json` if present, falling back to application env (the compiled-in env var values). GenServers that use settings (`ImmichClient`, `SlideTimer`) should read from `SettingsStore` rather than `Application.get_env` directly, so changes take effect after reboot without a reflash.
+
+**Note on WiFi:** Writing new WiFi credentials calls `VintageNet.configure/2` directly — no reboot needed for network changes.
+
+- [ ] **Step 1: Add `plug_cowboy` to `mix.exs` and run `mix deps.get`**
+
+In `mix.exs` deps:
+```elixir
+{:plug_cowboy, "~> 2.7"},
+```
+
+```bash
+mix deps.get
+```
+
+- [ ] **Step 2: Write failing tests for SettingsStore**
+
+Create `test/nerves_photos/settings_store_test.exs`:
+
+```elixir
+defmodule NervesPhotos.SettingsStoreTest do
+  use ExUnit.Case, async: true
+
+  alias NervesPhotos.SettingsStore
+
+  setup do
+    path = System.tmp_dir!() |> Path.join("nerves_photos_test_#{:erlang.unique_integer([:positive])}.json")
+    {:ok, _} = start_supervised({SettingsStore, path: path})
+    {:ok, path: path}
+  end
+
+  test "get/1 returns compiled-in default when no file exists" do
+    assert is_binary(SettingsStore.get(:immich_url)) or is_nil(SettingsStore.get(:immich_url))
+  end
+
+  test "put/2 and get/1 round-trip a value" do
+    :ok = SettingsStore.put(:slide_interval_ms, 10_000)
+    assert SettingsStore.get(:slide_interval_ms) == 10_000
+  end
+
+  test "put/2 persists to disk and reloads after restart", %{path: path} do
+    :ok = SettingsStore.put(:immich_url, "http://new-server:2283")
+
+    # Stop and restart to verify reload from disk
+    stop_supervised!(SettingsStore)
+    {:ok, _} = start_supervised({SettingsStore, path: path})
+
+    assert SettingsStore.get(:immich_url) == "http://new-server:2283"
+  end
+end
+```
+
+- [ ] **Step 3: Run to confirm failure**
+
+```bash
+MIX_TARGET=host mix test test/nerves_photos/settings_store_test.exs
+```
+
+Expected: `** (UndefinedFunctionError) function NervesPhotos.SettingsStore.get/1 is undefined`
+
+- [ ] **Step 4: Implement `SettingsStore`**
+
+Create `lib/nerves_photos/settings_store.ex`:
+
+```elixir
+defmodule NervesPhotos.SettingsStore do
+  use GenServer
+
+  @keys [:immich_url, :immich_api_key, :immich_album_id, :slide_interval_ms,
+         :wifi_ssid, :wifi_psk]
+  @default_path "/data/nerves_photos/settings.json"
+
+  def start_link(opts \\ []) do
+    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  def get(key), do: GenServer.call(__MODULE__, {:get, key})
+  def put(key, value), do: GenServer.call(__MODULE__, {:put, key, value})
+  def all, do: GenServer.call(__MODULE__, :all)
+
+  @impl true
+  def init(opts) do
+    path = opts[:path] || @default_path
+    settings = load(path)
+    {:ok, %{path: path, settings: settings}}
+  end
+
+  @impl true
+  def handle_call({:get, key}, _from, state) do
+    {:reply, Map.get(state.settings, key), state}
+  end
+
+  def handle_call({:put, key, value}, _from, state) when key in @keys do
+    settings = Map.put(state.settings, key, value)
+    :ok = persist(state.path, settings)
+    {:reply, :ok, %{state | settings: settings}}
+  end
+
+  def handle_call(:all, _from, state) do
+    {:reply, state.settings, state}
+  end
+
+  defp load(path) do
+    defaults = %{
+      immich_url: Application.get_env(:nerves_photos, :immich_url),
+      immich_api_key: Application.get_env(:nerves_photos, :immich_api_key),
+      immich_album_id: Application.get_env(:nerves_photos, :immich_album_id),
+      slide_interval_ms: Application.get_env(:nerves_photos, :slide_interval_ms, 30_000),
+      wifi_ssid: nil,
+      wifi_psk: nil
+    }
+
+    case File.read(path) do
+      {:ok, json} ->
+        saved =
+          Jason.decode!(json, keys: :atoms)
+          |> Map.take(@keys)
+        Map.merge(defaults, saved)
+
+      {:error, :enoent} ->
+        defaults
+    end
+  end
+
+  defp persist(path, settings) do
+    path |> Path.dirname() |> File.mkdir_p!()
+    File.write!(path, Jason.encode!(settings))
+  end
+end
+```
+
+- [ ] **Step 5: Run SettingsStore tests**
+
+```bash
+MIX_TARGET=host mix test test/nerves_photos/settings_store_test.exs
+```
+
+Expected: 3 tests, 0 failures.
+
+- [ ] **Step 6: Implement `SettingsRouter` (Plug)**
+
+Create `lib/nerves_photos/settings_router.ex`:
+
+```elixir
+defmodule NervesPhotos.SettingsRouter do
+  use Plug.Router
+
+  plug :match
+  plug Plug.Parsers, parsers: [:urlencoded]
+  plug :dispatch
+
+  get "/settings" do
+    settings = NervesPhotos.SettingsStore.all()
+    send_resp(conn, 200, render_form(settings))
+  end
+
+  post "/settings" do
+    params = conn.body_params
+
+    if url = params["immich_url"], do: NervesPhotos.SettingsStore.put(:immich_url, url)
+    if key = params["immich_api_key"], do: NervesPhotos.SettingsStore.put(:immich_api_key, key)
+    if album = params["immich_album_id"], do: NervesPhotos.SettingsStore.put(:immich_album_id, album)
+
+    if interval = params["slide_interval_ms"] do
+      case Integer.parse(interval) do
+        {ms, ""} when ms > 0 -> NervesPhotos.SettingsStore.put(:slide_interval_ms, ms)
+        _ -> nil
+      end
+    end
+
+    if ssid = params["wifi_ssid"] do
+      psk = params["wifi_psk"] || ""
+      NervesPhotos.SettingsStore.put(:wifi_ssid, ssid)
+      NervesPhotos.SettingsStore.put(:wifi_psk, psk)
+      VintageNet.configure("wlan0", %{
+        type: VintageNetWiFi,
+        vintage_net_wifi: %{networks: [%{ssid: ssid, psk: psk, key_mgmt: :wpa_psk}]},
+        ipv4: %{method: :dhcp}
+      })
+    end
+
+    conn
+    |> put_resp_header("location", "/settings")
+    |> send_resp(303, "")
+  end
+
+  get "/screenshot" do
+    case capture_screenshot() do
+      {:ok, bmp} ->
+        conn
+        |> put_resp_content_type("image/bmp")
+        |> send_resp(200, bmp)
+
+      {:error, reason} ->
+        send_resp(conn, 500, "screenshot unavailable: #{inspect(reason)}")
+    end
+  end
+
+  match _ do
+    send_resp(conn, 404, "not found")
+  end
+
+  # Reads /dev/fb0 (fbdev emulation over DRM) and wraps it in a BMP envelope.
+  # The RPi5 framebuffer is XRGB8888: bytes [B, G, R, X] per pixel — which
+  # matches BMP 32bpp BGRA layout (X treated as alpha=0), so no byte-swapping
+  # is needed.
+  defp capture_screenshot do
+    with {:ok, size_str} <- File.read("/sys/class/graphics/fb0/virtual_size"),
+         [w_str, h_str] = String.split(String.trim(size_str), ","),
+         {width, ""} <- Integer.parse(w_str),
+         {height, ""} <- Integer.parse(h_str),
+         {:ok, pixels} <- File.read("/dev/fb0") do
+      {:ok, build_bmp(pixels, width, height)}
+    end
+  end
+
+  defp build_bmp(pixels, width, height) do
+    pixel_data_size = byte_size(pixels)
+    file_size = 14 + 40 + pixel_data_size
+
+    file_header =
+      "BM" <>
+        <<file_size::little-32, 0::32, 54::little-32>>
+
+    dib_header =
+      <<40::little-32,
+        width::little-32,
+        # negative height = top-down row order
+        (-height)::little-signed-32,
+        1::little-16,
+        32::little-16,
+        0::little-32,
+        pixel_data_size::little-32,
+        2835::little-32,
+        2835::little-32,
+        0::little-32,
+        0::little-32>>
+
+    file_header <> dib_header <> pixels
+  end
+
+  defp render_form(s) do
+    interval_s = div(Map.get(s, :slide_interval_ms, 30_000), 1_000)
+    """
+    <!DOCTYPE html>
+    <html>
+    <head><title>NervesPhotos Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      body { font-family: sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; }
+      label { display: block; margin-top: 16px; font-size: 14px; color: #555; }
+      input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; font-size: 16px; }
+      button { margin-top: 24px; width: 100%; padding: 12px; background: #2563eb; color: white;
+               border: none; font-size: 16px; cursor: pointer; }
+      h2 { margin-top: 32px; font-size: 16px; color: #888; text-transform: uppercase; }
+    </style>
+    </head>
+    <body>
+    <h1>NervesPhotos Settings</h1>
+    <form method="POST" action="/settings">
+      <h2>Immich</h2>
+      <label>Server URL
+        <input name="immich_url" value="#{Map.get(s, :immich_url, "")}">
+      </label>
+      <label>API Key
+        <input name="immich_api_key" value="#{Map.get(s, :immich_api_key, "")}">
+      </label>
+      <label>Album ID
+        <input name="immich_album_id" value="#{Map.get(s, :immich_album_id, "")}">
+      </label>
+      <h2>Display</h2>
+      <label>Slide interval (seconds)
+        <input name="slide_interval_ms" type="number" min="5" value="#{interval_s}">
+      </label>
+      <h2>WiFi</h2>
+      <label>SSID
+        <input name="wifi_ssid" value="#{Map.get(s, :wifi_ssid, "")}">
+      </label>
+      <label>Password
+        <input name="wifi_psk" type="password">
+      </label>
+      <button type="submit">Save &amp; Reboot</button>
+    </form>
+    </body>
+    </html>
+    """
+  end
+end
+```
+
+- [ ] **Step 7: Implement `SettingsServer`**
+
+Create `lib/nerves_photos/settings_server.ex`:
+
+```elixir
+defmodule NervesPhotos.SettingsServer do
+  def child_spec(_opts) do
+    Plug.Cowboy.child_spec(
+      scheme: :http,
+      plug: NervesPhotos.SettingsRouter,
+      options: [port: 80]
+    )
+  end
+end
+```
+
+- [ ] **Step 8: Add `SettingsStore` and `SettingsServer` to the supervisor**
+
+In `lib/nerves_photos/application.ex`, update the target `defp target_children` block:
+
+```elixir
+# host branch — add SettingsStore only (no HTTP listener on port 80 on host)
+defp target_children do
+  [
+    NervesPhotos.SettingsStore,
+    NervesPhotos.ImmichClient,
+    NervesPhotos.WeatherFetcher,
+    NervesPhotos.SlideTimer
+  ]
+end
+
+# target branch — add both
+defp target_children do
+  viewport_config = Application.get_env(:nerves_photos, :viewport)
+  [
+    NervesPhotos.SettingsStore,
+    NervesPhotos.SettingsServer,
+    NervesPhotos.ImmichClient,
+    NervesPhotos.WeatherFetcher,
+    NervesPhotos.ImageLoader,
+    NervesPhotos.SlideTimer,
+    {Scenic, [viewport_config]}
+  ]
+end
+```
+
+- [ ] **Step 9: Advertise HTTP via mDNS**
+
+In `config/target.exs`, add to the existing `mdns_lite` services list:
+
+```elixir
+%{
+  protocol: "http",
+  transport: "tcp",
+  port: 80
+}
+```
+
+- [ ] **Step 10: Run full test suite**
+
+```bash
+MIX_TARGET=host mix test
+```
+
+Expected: all tests pass.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add lib/nerves_photos/settings_store.ex \
+        lib/nerves_photos/settings_router.ex \
+        lib/nerves_photos/settings_server.ex \
+        lib/nerves_photos/application.ex \
+        config/target.exs \
+        test/nerves_photos/settings_store_test.exs
+git commit -m "feat: add web settings UI served at nerves.local/settings"
 ```
