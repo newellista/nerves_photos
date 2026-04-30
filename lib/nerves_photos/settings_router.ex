@@ -24,6 +24,8 @@ defmodule NervesPhotos.SettingsRouter do
       end
     end
 
+    NervesPhotos.SettingsStore.put(:weather_zip, params["weather_zip"] || "")
+
     if ssid = params["wifi_ssid"] do
       psk = params["wifi_psk"] || ""
       NervesPhotos.SettingsStore.put(:wifi_ssid, ssid)
@@ -33,6 +35,10 @@ defmodule NervesPhotos.SettingsRouter do
         vintage_net_wifi: %{networks: [%{ssid: ssid, psk: psk, key_mgmt: :wpa_psk}]},
         ipv4: %{method: :dhcp}
       })
+    end
+
+    for mod <- [NervesPhotos.ImmichClient, NervesPhotos.WeatherFetcher, NervesPhotos.SlideTimer] do
+      if pid = Process.whereis(mod), do: GenServer.stop(pid, :normal)
     end
 
     conn
@@ -73,6 +79,10 @@ defmodule NervesPhotos.SettingsRouter do
       <label>Album ID
         <input name="immich_album_id" value="#{Map.get(s, :immich_album_id) || ""}">
       </label>
+      <h2>Weather</h2>
+      <label>ZIP Code (leave blank to use IP location)
+        <input name="weather_zip" value="#{Map.get(s, :weather_zip) || ""}">
+      </label>
       <h2>Display</h2>
       <label>Slide interval (seconds)
         <input name="slide_interval_ms" type="number" min="5" value="#{interval_s}">
@@ -84,7 +94,7 @@ defmodule NervesPhotos.SettingsRouter do
       <label>Password
         <input name="wifi_psk" type="password">
       </label>
-      <button type="submit">Save &amp; Reboot</button>
+      <button type="submit">Save</button>
     </form>
     </body>
     </html>

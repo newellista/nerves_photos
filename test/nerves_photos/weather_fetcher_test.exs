@@ -45,6 +45,37 @@ defmodule NervesPhotos.WeatherFetcherTest do
     assert is_integer(code)
   end
 
+  test "uses zipcode geolocation when zip_fn returns a value" do
+    test_pid = self()
+
+    Req.Test.stub(:weather_zip_stub, fn conn ->
+      cond do
+        String.contains?(conn.host, "geocoding-api") ->
+          Req.Test.json(conn, %{"results" => [%{"latitude" => 40.7, "longitude" => -74.0}]})
+
+        String.contains?(conn.host, "open-meteo") ->
+          Req.Test.json(conn, %{"current" => %{"temperature_2m" => 55.0, "weathercode" => 3}})
+
+        true ->
+          Req.Test.json(conn, %{})
+      end
+    end)
+
+    Req.Test.allow(:weather_zip_stub, test_pid, fn -> GenServer.whereis(:weather_zip_test) end)
+
+    {:ok, pid} =
+      start_supervised(
+        {WeatherFetcher,
+         name: :weather_zip_test,
+         zip_fn: fn -> "10001" end,
+         req_options: [plug: {Req.Test, :weather_zip_stub}]},
+        id: :weather_zip
+      )
+
+    :sys.get_state(pid)
+    assert {:ok, %{temp_f: 55.0, condition: "Overcast", icon_code: 3}} = GenServer.call(pid, :current)
+  end
+
   test "current/0 returns :unavailable when fetch fails" do
     test_pid = self()
 

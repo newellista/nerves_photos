@@ -37,7 +37,16 @@ defmodule NervesPhotos.WeatherFetcher do
   @impl true
   def init(opts) do
     send(self(), :fetch_weather)
-    {:ok, %{weather: :unavailable, req_options: opts[:req_options] || []}}
+
+    zip_fn =
+      opts[:zip_fn] ||
+        fn ->
+          if Process.whereis(NervesPhotos.SettingsStore),
+            do: NervesPhotos.SettingsStore.get(:weather_zip),
+            else: nil
+        end
+
+    {:ok, %{weather: :unavailable, req_options: opts[:req_options] || [], zip_fn: zip_fn}}
   end
 
   @impl true
@@ -47,8 +56,10 @@ defmodule NervesPhotos.WeatherFetcher do
 
   @impl true
   def handle_info(:fetch_weather, state) do
+    zip = state.zip_fn.()
+
     weather =
-      with {:ok, coords} <- geolocate(state.req_options),
+      with {:ok, coords} <- resolve_location(zip, state.req_options),
            {:ok, data} <- fetch_weather(coords, state.req_options) do
         {:ok, data}
       else
@@ -61,7 +72,33 @@ defmodule NervesPhotos.WeatherFetcher do
     {:noreply, %{state | weather: weather}}
   end
 
-  defp geolocate(req_options) do
+  defp resolve_location(zip, req_options) when is_binary(zip) and zip != "" do
+    geolocate_by_zip(zip, req_options)
+  end
+
+  defp resolve_location(_zip, req_options) do
+    geolocate_by_ip(req_options)
+  end
+
+  defp geolocate_by_zip(zip, req_options) do
+    req = Req.new([base_url: "https://geocoding-api.open-meteo.com"] ++ req_options)
+
+    case Req.get(req, url: "/v1/search", params: [name: zip, count: 1, language: "en", format: "json"]) do
+      {:ok, %{status: 200, body: %{"results" => [%{"latitude" => lat, "longitude" => lon} | _]}}} ->
+        {:ok, {lat, lon}}
+
+      {:ok, %{status: 200}} ->
+        {:error, {:geo_zip, :not_found}}
+
+      {:ok, resp} ->
+        {:error, {:geo_zip, resp.status}}
+
+      {:error, e} ->
+        {:error, e}
+    end
+  end
+
+  defp geolocate_by_ip(req_options) do
     req = Req.new([base_url: "http://ip-api.com"] ++ req_options)
 
     case Req.get(req, url: "/json") do

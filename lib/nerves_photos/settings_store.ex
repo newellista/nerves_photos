@@ -2,7 +2,7 @@ defmodule NervesPhotos.SettingsStore do
   use GenServer
 
   @keys [:immich_url, :immich_api_key, :immich_album_id, :slide_interval_ms,
-         :wifi_ssid, :wifi_psk]
+         :wifi_ssid, :wifi_psk, :weather_zip]
   @default_path "/data/nerves_photos/settings.json"
 
   def start_link(opts \\ []) do
@@ -48,7 +48,8 @@ defmodule NervesPhotos.SettingsStore do
       immich_album_id: Application.get_env(:nerves_photos, :immich_album_id),
       slide_interval_ms: Application.get_env(:nerves_photos, :slide_interval_ms, 30_000),
       wifi_ssid: nil,
-      wifi_psk: nil
+      wifi_psk: nil,
+      weather_zip: nil
     }
 
     case File.read(path) do
