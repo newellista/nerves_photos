@@ -4,6 +4,7 @@ defmodule NervesPhotos.ImmichClient do
 
   @backoff_initial 1_000
   @backoff_max 60_000
+  @recheck_interval 5_000
 
   def start_link(opts \\ []) do
     name = Keyword.get(opts, :name, __MODULE__)
@@ -17,21 +18,45 @@ defmodule NervesPhotos.ImmichClient do
 
   @impl true
   def init(opts) do
+    fetch = fn key, setting ->
+      case Keyword.fetch(opts, key) do
+        {:ok, val} -> val
+        :error -> NervesPhotos.SettingsStore.get(setting)
+      end
+    end
+
     state = %{
-      url: opts[:url] || NervesPhotos.SettingsStore.get(:immich_url),
-      api_key: opts[:api_key] || NervesPhotos.SettingsStore.get(:immich_api_key),
-      album_id: opts[:album_id] || NervesPhotos.SettingsStore.get(:immich_album_id),
+      url: fetch.(:url, :immich_url),
+      api_key: fetch.(:api_key, :immich_api_key),
+      album_id: fetch.(:album_id, :immich_album_id),
       req_options: opts[:req_options] || [],
       queue: [],
       index: 0,
       status: :loading
     }
 
-    send(self(), :fetch_album)
-    {:ok, state}
+    if configured?(state) do
+      send(self(), :fetch_album)
+    else
+      Process.send_after(self(), :recheck_config, @recheck_interval)
+    end
+
+    {:ok, %{state | status: if(configured?(state), do: :loading, else: :not_configured)}}
   end
 
   @impl true
+  def handle_call(:current, _from, %{status: :not_configured} = state) do
+    {:reply, :not_configured, state}
+  end
+
+  def handle_call(:advance, _from, %{status: :not_configured} = state) do
+    {:reply, :not_configured, state}
+  end
+
+  def handle_call(:queue_position, _from, %{status: :not_configured} = state) do
+    {:reply, {0, 0}, state}
+  end
+
   def handle_call(:current, _from, %{queue: [], status: :disconnected} = state) do
     {:reply, :disconnected, state}
   end
@@ -100,6 +125,26 @@ defmodule NervesPhotos.ImmichClient do
         new_state = state |> Map.put(:status, :disconnected) |> Map.put(:backoff, min(backoff * 2, @backoff_max))
         {:noreply, new_state}
     end
+  end
+
+  def handle_info(:recheck_config, state) do
+    new_state = %{state |
+      url: state.url || NervesPhotos.SettingsStore.get(:immich_url),
+      api_key: state.api_key || NervesPhotos.SettingsStore.get(:immich_api_key),
+      album_id: state.album_id || NervesPhotos.SettingsStore.get(:immich_album_id)
+    }
+
+    if configured?(new_state) do
+      send(self(), :fetch_album)
+      {:noreply, %{new_state | status: :loading}}
+    else
+      Process.send_after(self(), :recheck_config, @recheck_interval)
+      {:noreply, new_state}
+    end
+  end
+
+  defp configured?(state) do
+    is_binary(state.url) and is_binary(state.api_key) and is_binary(state.album_id)
   end
 
   defp fetch_album(state) do
