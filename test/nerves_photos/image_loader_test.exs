@@ -23,8 +23,7 @@ defmodule NervesPhotos.ImageLoaderTest do
     {:ok, _pid} =
       start_supervised(
         {ImageLoader,
-         url: "http://immich.test",
-         api_key: "test-key",
+         connection_info_fn: fn -> {"http://immich.test", "test-key"} end,
          req_options: [plug: {Req.Test, ImageLoader}],
          put_fn: fn _key, _bytes -> :ok end}
       )

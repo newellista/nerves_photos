@@ -12,8 +12,8 @@ defmodule NervesPhotos.ImmichClient do
 
   def current, do: GenServer.call(__MODULE__, :current)
   def advance, do: GenServer.call(__MODULE__, :advance)
-  # Returns 1-based current position (human-readable) and total count
   def queue_position, do: GenServer.call(__MODULE__, :queue_position)
+  def connection_info, do: GenServer.call(__MODULE__, :connection_info)
 
   @impl true
   def init(opts) do
@@ -75,6 +75,10 @@ defmodule NervesPhotos.ImmichClient do
 
   def handle_call(:queue_position, _from, state) do
     {:reply, {state.index + 1, length(state.queue)}, state}
+  end
+
+  def handle_call(:connection_info, _from, state) do
+    {:reply, {state.url, state.api_key}, state}
   end
 
   @impl true

@@ -16,8 +16,7 @@ defmodule NervesPhotos.ImageLoader do
   def init(opts) do
     {:ok,
      %{
-       url: opts[:url] || NervesPhotos.SettingsStore.get(:immich_url),
-       api_key: opts[:api_key] || NervesPhotos.SettingsStore.get(:immich_api_key),
+       connection_info_fn: opts[:connection_info_fn] || &NervesPhotos.ImmichClient.connection_info/0,
        req_options: opts[:req_options] || [],
        put_fn: opts[:put_fn] || &stream_put/2
      }}
@@ -47,9 +46,11 @@ defmodule NervesPhotos.ImageLoader do
   end
 
   defp fetch_preview(asset_id, state) do
+    {url, api_key} = state.connection_info_fn.()
+
     req =
       Req.new(
-        [base_url: state.url, headers: [{"x-api-key", state.api_key}]] ++ state.req_options
+        [base_url: url, headers: [{"x-api-key", api_key}]] ++ state.req_options
       )
 
     case Req.get(req, url: "/api/assets/#{asset_id}/thumbnail", params: [size: "preview"]) do

@@ -79,8 +79,7 @@ defmodule NervesPhotos.IntegrationTest do
 
     start_supervised!(
       {NervesPhotos.ImageLoader,
-       url: "http://immich.test",
-       api_key: "test-key",
+       connection_info_fn: fn -> NervesPhotos.ImmichClient.connection_info() end,
        req_options: [plug: {Req.Test, NervesPhotos.ImageLoader}],
        put_fn: fn _key, _bytes -> :ok end}
     )
