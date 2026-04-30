@@ -55,21 +55,9 @@ config :nerves_ssh,
 config :vintage_net,
   regulatory_domain: "00",
   config: [
-    {
-      "wlan0", %{
-        type: VintageNetWiFi,
-        vintage_net_wifi: %{
-          networks: [
-            %{
-              ssid: System.get_env("WIFI_SSID"),
-              psk: System.get_env("WIFI_PASS"),
-              key_mgmt: :wpa_psk
-            },
-          ],
-        },
-        ipv4: %{method: :dhcp}
-      }
-    },
+    # wlan0 is managed at runtime by NervesPhotos.ConnectivityMonitor.
+    # It opens an AP on first boot (no saved WiFi) or connects to saved credentials.
+    {"wlan0", %{type: VintageNet.Technology.Null}},
     {"usb0", %{type: VintageNetDirect}},
     {"eth0",
      %{
