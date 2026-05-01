@@ -33,6 +33,12 @@ else
   import_config "target.exs"
 end
 
+# rpi2/rpi3 system images don't include Mesa3D, so scenic_driver_local can't
+# compile for them. Force headless mode so the app starts without Scenic.
+if Mix.target() in [:rpi2, :rpi3] do
+  config :nerves_photos, headless_mode: true
+end
+
 if Mix.env() == :test do
   import_config "test.exs"
 end
