@@ -3,7 +3,7 @@ defmodule NervesPhotos.MixProject do
 
   @app :nerves_photos
   @version "0.1.0"
-  @all_targets [:bbb, :grisp2, :osd32mp1, :mangopi_mq_pro, :qemu_aarch64, :rpi, :rpi0, :rpi0_2, :rpi2, :rpi3, :rpi4, :rpi5, :x86_64]
+  @all_targets [:bbb, :grisp2, :osd32mp1, :mangopi_mq_pro, :qemu_aarch64, :rpi, :rpi0, :rpi0_2, :rpi3, :rpi4, :rpi5, :x86_64]
 
   def project do
     setup_nerves_env()
@@ -61,13 +61,15 @@ defmodule NervesPhotos.MixProject do
 
       # UI / Scenic
     {:scenic, "~> 0.11.0"},
-      {:scenic_driver_local, "~> 0.11", targets: @all_targets, make_env: %{"SCENIC_LOCAL_TARGET" => "drm"}},
+      # rpi0/rpi4/rpi5 use DRM; rpi3 uses BCM (VideoCore IV userland)
+      {:scenic_driver_local, "~> 0.11", targets: [:rpi0, :rpi3, :rpi4, :rpi5], make_env: %{"SCENIC_LOCAL_TARGET" => "drm"}},
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
       # version updates, please review their release notes in case
       # changes to your application are needed.
       {:nerves_system_rpi0, "~> 2.0", runtime: false, targets: :rpi0},
+      {:nerves_system_rpi3, "~> 2.0", runtime: false, targets: :rpi3},
       {:nerves_system_rpi5, "~> 2.0", runtime: false, targets: :rpi5},
 
       # Web settings UI
@@ -97,6 +99,9 @@ defmodule NervesPhotos.MixProject do
       "rpi4" ->
         System.put_env("SCENIC_LOCAL_TARGET", "drm")
         System.put_env("SCENIC_LOCAL_GL", "gles3")
+
+      "rpi3" ->
+        System.put_env("SCENIC_LOCAL_TARGET", "bcm")
 
       "rpi0" ->
         System.put_env("SCENIC_LOCAL_TARGET", "drm")

@@ -104,6 +104,20 @@ defmodule NervesPhotos.ImmichClientTest do
     assert GenServer.call(pid, :current) == :empty
   end
 
+  test "returns :not_configured when settings are nil and does not crash" do
+    {:ok, pid} =
+      start_supervised(
+        {ImmichClient, url: nil, api_key: nil, album_id: nil, name: :unconfigured_client},
+        id: :unconfigured_client
+      )
+
+    :sys.get_state(pid)
+    assert GenServer.call(pid, :current) == :not_configured
+    assert GenServer.call(pid, :advance) == :not_configured
+    assert GenServer.call(pid, :queue_position) == {0, 0}
+    assert Process.alive?(pid)
+  end
+
   test "current/0 returns :disconnected when Immich returns HTTP 500" do
     test_pid = self()
 

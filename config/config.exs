@@ -23,7 +23,7 @@ config :nerves_photos, :viewport, %{
   size: {1920, 1080},
   default_scene: NervesPhotos.Scene.Main,
   drivers: [
-    %{module: Scenic.Driver.Local, opts: []}
+    %{module: Scenic.Driver.Local}
   ]
 }
 
