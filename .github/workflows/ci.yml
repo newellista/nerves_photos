@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "feature/**", "docs/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    name: Test (host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19"
+          otp-version: "27"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}-otp27
+          restore-keys: ${{ runner.os }}-mix-
+
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+      - run: mix format --check-formatted
+      - run: mix test
+
+  firmware:
+    name: Firmware (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [rpi0, rpi5]
+    env:
+      MIX_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19"
+          otp-version: "27"
+
+      - name: Install system packages
+        run: sudo apt-get install -y build-essential squashfs-tools
+
+      - name: Install nerves_bootstrap
+        run: mix archive.install hex nerves_bootstrap --force
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nerves/artifacts
+          key: nerves-artifacts-${{ matrix.target }}-${{ hashFiles('mix.lock') }}
+          restore-keys: nerves-artifacts-${{ matrix.target }}-
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ matrix.target }}-${{ hashFiles('mix.lock') }}-otp27
+          restore-keys: ${{ runner.os }}-mix-${{ matrix.target }}-
+
+      - run: mix deps.get
+      - run: mix firmware
