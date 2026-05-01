@@ -18,6 +18,9 @@ jobs:
           elixir-version: "1.19"
           otp-version: "27"
 
+      - name: Install nerves_bootstrap
+        run: mix archive.install hex nerves_bootstrap --force
+
       - uses: actions/cache@v4
         with:
           path: |
