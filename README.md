@@ -91,7 +91,7 @@ SlideTimer ──:next_photo──► Scene.Main ──advance()──► Immich
 
 ## Environment variables
 
-Copy `.env.work.example` to `.env.work` and fill in your values (file is gitignored):
+Copy `.env.example` to `.env.work` and fill in your values (file is gitignored):
 
 ```bash
 export MIX_TARGET=rpi5          # rpi0 | rpi3 | rpi4 | rpi5

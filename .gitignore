@@ -5,6 +5,6 @@
 /*.burn
 /nerves/artifacts
 .env*
-!.env.work.example
+!.env.example
 .superpowers/
 .worktrees/
