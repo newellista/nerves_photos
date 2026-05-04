@@ -74,7 +74,11 @@ defmodule NervesPhotos.MixProject do
 
       # Web settings UI
       {:plug, "~> 1.0"},
-      {:plug_cowboy, "~> 2.7"}
+      {:plug_cowboy, "~> 2.7"},
+
+      # Dev tooling
+      {:credo, "~> 1.7", only: :dev, runtime: false},
+      {:mix_audit, "~> 2.1", only: :dev, runtime: false}
       ]
   end
 
