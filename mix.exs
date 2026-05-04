@@ -57,7 +57,9 @@ defmodule NervesPhotos.MixProject do
         "format --check-formatted",
         "credo --strict",
         "deps.audit",
+        # hex.audit is a Mix archive task and isn't pre-loaded in alias context; cmd mix spawns a child process that loads it
         "cmd mix hex.audit",
+        # alias steps run in :dev env; shell wrapper forces :test so mix test compiles test modules correctly
         "cmd --cd . sh -c \"MIX_ENV=test mix test\""
       ]
     ]
