@@ -3,7 +3,20 @@ defmodule NervesPhotos.MixProject do
 
   @app :nerves_photos
   @version "0.1.0"
-  @all_targets [:bbb, :grisp2, :osd32mp1, :mangopi_mq_pro, :qemu_aarch64, :rpi, :rpi0, :rpi0_2, :rpi3, :rpi4, :rpi5, :x86_64]
+  @all_targets [
+    :bbb,
+    :grisp2,
+    :osd32mp1,
+    :mangopi_mq_pro,
+    :qemu_aarch64,
+    :rpi,
+    :rpi0,
+    :rpi0_2,
+    :rpi3,
+    :rpi4,
+    :rpi5,
+    :x86_64
+  ]
 
   def project do
     setup_nerves_env()
@@ -15,6 +28,7 @@ defmodule NervesPhotos.MixProject do
       archives: [nerves_bootstrap: "~> 1.15"],
       listeners: listeners(Mix.target(), Mix.env()),
       start_permanent: Mix.env() == :prod,
+      aliases: aliases(),
       deps: deps(),
       releases: [{@app, release()}]
     ]
@@ -34,7 +48,18 @@ defmodule NervesPhotos.MixProject do
 
   def aliases do
     [
-      "deps.get": ["deps.get", "cmd patch --forward -p1 -d deps/scenic_driver_local < patches/scenic_driver_local.patch || true"]
+      "deps.get": [
+        "deps.get",
+        "cmd patch --forward -p1 -d deps/scenic_driver_local < patches/scenic_driver_local.patch || true"
+      ],
+      ci: [
+        "compile --warnings-as-errors",
+        "format --check-formatted",
+        "credo --strict",
+        "deps.audit",
+        "cmd mix hex.audit",
+        "cmd --cd . sh -c \"MIX_ENV=test mix test\""
+      ]
     ]
   end
 
@@ -49,10 +74,10 @@ defmodule NervesPhotos.MixProject do
 
       # Allow Nerves.Runtime on host to support development, testing and CI.
       # See config/host.exs for usage.
-    {:nerves_runtime, "~> 0.13.12"},
+      {:nerves_runtime, "~> 0.13.12"},
 
       # Dependencies for all targets except :host
-    {:nerves_pack, "~> 0.7.1", targets: @all_targets},
+      {:nerves_pack, "~> 0.7.1", targets: @all_targets},
       {:jason, "~> 1.4"},
       {:req, "~> 0.5.0"},
       {:nerves_time, "~> 0.4.0"},
@@ -60,9 +85,10 @@ defmodule NervesPhotos.MixProject do
       {:vintage_net_wifi, "~> 0.12.8"},
 
       # UI / Scenic
-    {:scenic, "~> 0.11.0"},
+      {:scenic, "~> 0.11.0"},
       # rpi0/rpi4/rpi5 use DRM; rpi3 uses BCM (VideoCore IV userland)
-      {:scenic_driver_local, "~> 0.11", targets: [:rpi0, :rpi3, :rpi4, :rpi5], make_env: %{"SCENIC_LOCAL_TARGET" => "drm"}},
+      {:scenic_driver_local, "~> 0.11",
+       targets: [:rpi0, :rpi3, :rpi4, :rpi5], make_env: %{"SCENIC_LOCAL_TARGET" => "drm"}},
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
@@ -79,7 +105,7 @@ defmodule NervesPhotos.MixProject do
       # Dev tooling
       {:credo, "~> 1.7", only: :dev, runtime: false},
       {:mix_audit, "~> 2.1", only: :dev, runtime: false}
-      ]
+    ]
   end
 
   def release do
