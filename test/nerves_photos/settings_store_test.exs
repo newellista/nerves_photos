@@ -4,7 +4,10 @@ defmodule NervesPhotos.SettingsStoreTest do
   alias NervesPhotos.SettingsStore
 
   setup do
-    path = System.tmp_dir!() |> Path.join("nerves_photos_test_#{:erlang.unique_integer([:positive])}.json")
+    path =
+      System.tmp_dir!()
+      |> Path.join("nerves_photos_test_#{:erlang.unique_integer([:positive])}.json")
+
     {:ok, _} = start_supervised({SettingsStore, path: path})
     {:ok, path: path}
   end

@@ -1,8 +1,9 @@
 defmodule NervesPhotos.Component.WeatherOverlay do
+  @moduledoc false
   use Scenic.Component
   import Scenic.Primitives
-  alias Scenic.Graph
   alias NervesPhotos.Component.SickSun
+  alias Scenic.Graph
 
   @impl Scenic.Component
   def validate(params) when is_map(params), do: {:ok, params}
@@ -21,9 +22,10 @@ defmodule NervesPhotos.Component.WeatherOverlay do
     |> rect({184, 70}, fill: {:color_rgba, {0, 0, 0, 140}}, translate: {x, y})
     |> SickSun.add_to_graph(%{translate: {x + 8, y + 14}}, id: :sick_sun)
     |> text("No weather data",
-         fill: {:color_rgba, {255, 255, 255, 180}},
-         font_size: 13,
-         translate: {x + 50, y + 38})
+      fill: {:color_rgba, {255, 255, 255, 180}},
+      font_size: 13,
+      translate: {x + 50, y + 38}
+    )
   end
 
   defp build_graph(%{
@@ -39,8 +41,9 @@ defmodule NervesPhotos.Component.WeatherOverlay do
     |> rect({184, 70}, fill: {:color_rgba, {0, 0, 0, 140}}, translate: {x, y})
     |> text(temp_str, fill: :white, font_size: 20, translate: {x + 12, y + 34})
     |> text(condition,
-         fill: {:color_rgba, {255, 255, 255, 180}},
-         font_size: 14,
-         translate: {x + 12, y + 58})
+      fill: {:color_rgba, {255, 255, 255, 180}},
+      font_size: 14,
+      translate: {x + 12, y + 58}
+    )
   end
 end

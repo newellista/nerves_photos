@@ -1,4 +1,5 @@
 defmodule NervesPhotos.ConnectivityMonitor do
+  @moduledoc false
   use GenServer
   require Logger
 

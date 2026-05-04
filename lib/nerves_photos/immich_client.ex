@@ -1,4 +1,5 @@
 defmodule NervesPhotos.ImmichClient do
+  @moduledoc false
   use GenServer
   require Logger
 
@@ -122,16 +123,22 @@ defmodule NervesPhotos.ImmichClient do
         Logger.warning("ImmichClient: fetch failed: #{inspect(reason)}")
         backoff = Map.get(state, :backoff, @backoff_initial)
         Process.send_after(self(), :fetch_album, backoff)
-        new_state = state |> Map.put(:status, :disconnected) |> Map.put(:backoff, min(backoff * 2, @backoff_max))
+
+        new_state =
+          state
+          |> Map.put(:status, :disconnected)
+          |> Map.put(:backoff, min(backoff * 2, @backoff_max))
+
         {:noreply, new_state}
     end
   end
 
   def handle_info(:recheck_config, state) do
-    new_state = %{state |
-      url: state.url || NervesPhotos.SettingsStore.get(:immich_url),
-      api_key: state.api_key || NervesPhotos.SettingsStore.get(:immich_api_key),
-      album_id: state.album_id || NervesPhotos.SettingsStore.get(:immich_album_id)
+    new_state = %{
+      state
+      | url: state.url || NervesPhotos.SettingsStore.get(:immich_url),
+        api_key: state.api_key || NervesPhotos.SettingsStore.get(:immich_api_key),
+        album_id: state.album_id || NervesPhotos.SettingsStore.get(:immich_album_id)
     }
 
     if configured?(new_state) do

@@ -1,4 +1,5 @@
 defmodule NervesPhotos.WeatherFetcher do
+  @moduledoc false
   use GenServer
   require Logger
 
@@ -83,7 +84,10 @@ defmodule NervesPhotos.WeatherFetcher do
   defp geolocate_by_zip(zip, req_options) do
     req = Req.new([base_url: "https://geocoding-api.open-meteo.com"] ++ req_options)
 
-    case Req.get(req, url: "/v1/search", params: [name: zip, count: 1, language: "en", format: "json"]) do
+    case Req.get(req,
+           url: "/v1/search",
+           params: [name: zip, count: 1, language: "en", format: "json"]
+         ) do
       {:ok, %{status: 200, body: %{"results" => [%{"latitude" => lat, "longitude" => lon} | _]}}} ->
         {:ok, {lat, lon}}
 

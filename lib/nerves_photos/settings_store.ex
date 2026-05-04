@@ -1,8 +1,16 @@
 defmodule NervesPhotos.SettingsStore do
+  @moduledoc false
   use GenServer
 
-  @keys [:immich_url, :immich_api_key, :immich_album_id, :slide_interval_ms,
-         :wifi_ssid, :wifi_psk, :weather_zip]
+  @keys [
+    :immich_url,
+    :immich_api_key,
+    :immich_album_id,
+    :slide_interval_ms,
+    :wifi_ssid,
+    :wifi_psk,
+    :weather_zip
+  ]
   @default_path "/data/nerves_photos/settings.json"
 
   def start_link(opts \\ []) do
@@ -27,6 +35,7 @@ defmodule NervesPhotos.SettingsStore do
 
   def handle_call({:put, key, value}, _from, state) when key in @keys do
     settings = Map.put(state.settings, key, value)
+
     case persist(state.path, settings) do
       :ok -> {:reply, :ok, %{state | settings: settings}}
       {:error, reason} -> {:reply, {:error, reason}, state}

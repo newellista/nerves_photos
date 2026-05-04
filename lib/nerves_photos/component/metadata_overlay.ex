@@ -1,4 +1,5 @@
 defmodule NervesPhotos.Component.MetadataOverlay do
+  @moduledoc false
   use Scenic.Component
 
   import Scenic.Primitives
@@ -34,8 +35,11 @@ defmodule NervesPhotos.Component.MetadataOverlay do
   defp draw_lines(graph, [line1, line2 | _], height) do
     graph
     |> text(line1, fill: :white, font_size: 18, translate: {24, height - 56})
-    |> text(line2, fill: {:color_rgba, {255, 255, 255, 180}}, font_size: 15,
-         translate: {24, height - 32})
+    |> text(line2,
+      fill: {:color_rgba, {255, 255, 255, 180}},
+      font_size: 15,
+      translate: {24, height - 32}
+    )
   end
 
   defp format_date(nil), do: nil

@@ -1,16 +1,19 @@
 defmodule NervesPhotos.SettingsRouter do
+  @moduledoc false
   use Plug.Router
 
-  plug :match
-  plug Plug.Parsers, parsers: [:urlencoded]
-  plug :dispatch
+  plug(:match)
+  plug(Plug.Parsers, parsers: [:urlencoded])
+  plug(:dispatch)
 
   get "/settings" do
     settings = NervesPhotos.SettingsStore.all()
+
     wifi_mode =
       if pid = Process.whereis(NervesPhotos.ConnectivityMonitor) do
         GenServer.call(pid, :mode)
       end
+
     send_resp(conn, 200, render_form(settings, wifi_mode))
   end
 
@@ -19,7 +22,9 @@ defmodule NervesPhotos.SettingsRouter do
 
     if url = params["immich_url"], do: NervesPhotos.SettingsStore.put(:immich_url, url)
     if key = params["immich_api_key"], do: NervesPhotos.SettingsStore.put(:immich_api_key, key)
-    if album = params["immich_album_id"], do: NervesPhotos.SettingsStore.put(:immich_album_id, album)
+
+    if album = params["immich_album_id"],
+      do: NervesPhotos.SettingsStore.put(:immich_album_id, album)
 
     if interval = params["slide_interval_ms"] do
       case Integer.parse(interval) do
@@ -34,6 +39,7 @@ defmodule NervesPhotos.SettingsRouter do
       psk = params["wifi_psk"] || ""
       NervesPhotos.SettingsStore.put(:wifi_ssid, ssid)
       NervesPhotos.SettingsStore.put(:wifi_psk, psk)
+
       if pid = Process.whereis(NervesPhotos.ConnectivityMonitor) do
         GenServer.cast(pid, {:connect, ssid, psk})
       end
@@ -52,28 +58,24 @@ defmodule NervesPhotos.SettingsRouter do
     send_resp(conn, 404, "not found")
   end
 
+  defp wifi_banner(:ap) do
+    """
+    <div class="banner banner-warn">
+      Setup mode active. Connect to WiFi network <strong>NervesPhotos-Setup</strong>
+      and visit <strong>http://192.168.4.1/settings</strong> to configure.
+    </div>
+    """
+  end
+
+  defp wifi_banner(:connecting),
+    do: "<div class=\"banner banner-info\">Connecting to WiFi&hellip;</div>"
+
+  defp wifi_banner(:client), do: "<div class=\"banner banner-ok\">WiFi connected.</div>"
+  defp wifi_banner(_), do: ""
+
   defp render_form(s, wifi_mode) do
     interval_s = div(Map.get(s, :slide_interval_ms, 30_000), 1_000)
-
-    wifi_banner =
-      case wifi_mode do
-        :ap ->
-          """
-          <div class="banner banner-warn">
-            Setup mode active. Connect to WiFi network <strong>NervesPhotos-Setup</strong>
-            and visit <strong>http://192.168.4.1/settings</strong> to configure.
-          </div>
-          """
-
-        :connecting ->
-          "<div class=\"banner banner-info\">Connecting to WiFi&hellip;</div>"
-
-        :client ->
-          "<div class=\"banner banner-ok\">WiFi connected.</div>"
-
-        _ ->
-          ""
-      end
+    wifi_banner = wifi_banner(wifi_mode)
 
     """
     <!DOCTYPE html>

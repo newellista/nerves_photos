@@ -1,7 +1,11 @@
 defmodule NervesPhotos.Scene.Main do
+  @moduledoc false
   use Scenic.Scene
   require Logger
 
+  alias NervesPhotos.Component.DebugBar
+  alias NervesPhotos.Component.MetadataOverlay
+  alias NervesPhotos.Component.WeatherOverlay
   alias Scenic.Graph
   import Scenic.Primitives
 
@@ -57,7 +61,9 @@ defmodule NervesPhotos.Scene.Main do
   def handle_info({:slide_timer, :next_photo}, scene), do: {:noreply, scene}
 
   def handle_info({:image_loaded, _key}, scene) do
-    scene = assign(scene, disconnected: false, has_photo: true, transition: :fading_out, fade_step: 0)
+    scene =
+      assign(scene, disconnected: false, has_photo: true, transition: :fading_out, fade_step: 0)
+
     send(self(), :transition_tick)
     {:noreply, scene}
   end
@@ -67,7 +73,10 @@ defmodule NervesPhotos.Scene.Main do
     {:noreply, assign(scene, transition: :idle)}
   end
 
-  def handle_info(:transition_tick, %{assigns: %{transition: :fading_out, fade_step: step}} = scene)
+  def handle_info(
+        :transition_tick,
+        %{assigns: %{transition: :fading_out, fade_step: step}} = scene
+      )
       when step <= @fade_steps do
     opacity = step / @fade_steps
     scene = assign(scene, fade_opacity: opacity, fade_step: step + 1)
@@ -81,7 +90,10 @@ defmodule NervesPhotos.Scene.Main do
     {:noreply, render(scene)}
   end
 
-  def handle_info(:transition_tick, %{assigns: %{transition: :fading_in, fade_step: step}} = scene)
+  def handle_info(
+        :transition_tick,
+        %{assigns: %{transition: :fading_in, fade_step: step}} = scene
+      )
       when step <= @fade_steps do
     opacity = 1.0 - step / @fade_steps
     scene = assign(scene, fade_opacity: opacity, fade_step: step + 1)
@@ -130,11 +142,11 @@ defmodule NervesPhotos.Scene.Main do
           g
         end
       end)
-      |> NervesPhotos.Component.MetadataOverlay.add_to_graph(
+      |> MetadataOverlay.add_to_graph(
         Map.merge(meta, %{width: width, height: height}),
         id: :metadata
       )
-      |> NervesPhotos.Component.WeatherOverlay.add_to_graph(
+      |> WeatherOverlay.add_to_graph(
         %{weather: weather, width: width, height: height},
         id: :weather
       )
@@ -143,10 +155,16 @@ defmodule NervesPhotos.Scene.Main do
           msg_x = div(width, 2) - 100
 
           g
-          |> rect({200, 36}, fill: {:color_rgba, {0, 0, 0, 160}},
-               translate: {msg_x, div(height, 2) - 18}, radius: 8)
-          |> text("No photos found in album", fill: :white,
-               font_size: 16, translate: {msg_x + 12, div(height, 2) + 7})
+          |> rect({200, 36},
+            fill: {:color_rgba, {0, 0, 0, 160}},
+            translate: {msg_x, div(height, 2) - 18},
+            radius: 8
+          )
+          |> text("No photos found in album",
+            fill: :white,
+            font_size: 16,
+            translate: {msg_x + 12, div(height, 2) + 7}
+          )
         else
           g
         end
@@ -156,19 +174,27 @@ defmodule NervesPhotos.Scene.Main do
           label_x = div(width, 2) - 70
 
           g
-          |> rect({140, 30}, fill: {:color_rgba, {0, 0, 0, 160}},
-               translate: {label_x, 16}, radius: 15)
-          |> text("Reconnecting...", fill: {:color, {255, 204, 68}},
-               font_size: 16, translate: {label_x + 10, 37})
+          |> rect({140, 30},
+            fill: {:color_rgba, {0, 0, 0, 160}},
+            translate: {label_x, 16},
+            radius: 15
+          )
+          |> text("Reconnecting...",
+            fill: {:color, {255, 204, 68}},
+            font_size: 16,
+            translate: {label_x + 10, 37}
+          )
         else
           g
         end
       end)
       |> then(fn g ->
         if show_debug do
-          NervesPhotos.Component.DebugBar.add_to_graph(g,
+          DebugBar.add_to_graph(
+            g,
             %{current: current, total: total, width: width, height: height},
-            id: :debug)
+            id: :debug
+          )
         else
           g
         end

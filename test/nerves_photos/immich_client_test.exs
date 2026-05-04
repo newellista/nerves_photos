@@ -7,27 +7,23 @@ defmodule NervesPhotos.ImmichClientTest do
     test_pid = self()
 
     Req.Test.stub(ImmichClient, fn conn ->
-      uri = conn.request_path
-
-      cond do
-        String.contains?(uri, "/api/albums/") ->
-          Req.Test.json(conn, %{
-            "assets" => [
-              %{
-                "id" => "asset-1",
-                "fileCreatedAt" => "2023-06-12T10:00:00.000Z",
-                "exifInfo" => %{"city" => "Yosemite", "country" => "USA"}
-              },
-              %{
-                "id" => "asset-2",
-                "fileCreatedAt" => "2023-07-01T12:00:00.000Z",
-                "exifInfo" => %{"city" => "Zion", "country" => "USA"}
-              }
-            ]
-          })
-
-        true ->
-          Req.Test.json(conn, %{})
+      if String.contains?(conn.request_path, "/api/albums/") do
+        Req.Test.json(conn, %{
+          "assets" => [
+            %{
+              "id" => "asset-1",
+              "fileCreatedAt" => "2023-06-12T10:00:00.000Z",
+              "exifInfo" => %{"city" => "Yosemite", "country" => "USA"}
+            },
+            %{
+              "id" => "asset-2",
+              "fileCreatedAt" => "2023-07-01T12:00:00.000Z",
+              "exifInfo" => %{"city" => "Zion", "country" => "USA"}
+            }
+          ]
+        })
+      else
+        Req.Test.json(conn, %{})
       end
     end)
 
