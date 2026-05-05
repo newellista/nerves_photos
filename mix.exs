@@ -10,7 +10,6 @@ defmodule NervesPhotos.MixProject do
     :mangopi_mq_pro,
     :qemu_aarch64,
     :rpi,
-    :rpi0,
     :rpi0_2,
     :rpi3,
     :rpi4,
@@ -89,15 +88,14 @@ defmodule NervesPhotos.MixProject do
 
       # UI / Scenic
       {:scenic, "~> 0.11.0"},
-      # rpi0/rpi4/rpi5 use DRM; rpi3 uses BCM (VideoCore IV userland)
+      # rpi4/rpi5 use DRM; rpi3 uses BCM (VideoCore IV userland)
       {:scenic_driver_local, "~> 0.11",
-       targets: [:rpi0, :rpi3, :rpi4, :rpi5], make_env: %{"SCENIC_LOCAL_TARGET" => "drm"}},
+       targets: [:rpi3, :rpi4, :rpi5], make_env: %{"SCENIC_LOCAL_TARGET" => "drm"}},
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
       # version updates, please review their release notes in case
       # changes to your application are needed.
-      {:nerves_system_rpi0, "~> 2.0", runtime: false, targets: :rpi0},
       {:nerves_system_rpi3, "~> 2.0", runtime: false, targets: :rpi3},
       {:nerves_system_rpi5, "~> 2.0", runtime: false, targets: :rpi5},
 
@@ -135,9 +133,6 @@ defmodule NervesPhotos.MixProject do
 
       "rpi3" ->
         System.put_env("SCENIC_LOCAL_TARGET", "bcm")
-
-      "rpi0" ->
-        System.put_env("SCENIC_LOCAL_TARGET", "drm")
 
       _ ->
         :ok

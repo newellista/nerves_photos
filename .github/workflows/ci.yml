@@ -44,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [rpi0, rpi3, rpi5]
+        target: [rpi3, rpi5]
     env:
       MIX_TARGET: ${{ matrix.target }}
     steps:
