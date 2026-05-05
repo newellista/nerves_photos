@@ -54,6 +54,28 @@ defmodule NervesPhotos.SettingsRouter do
     |> send_resp(303, "")
   end
 
+  get "/current/photo" do
+    case NervesPhotos.ImmichClient.current() do
+      {asset_id, _metadata} ->
+        {url, api_key} = NervesPhotos.ImmichClient.connection_info()
+        req_opts = Application.get_env(:nerves_photos, :req_options, [])
+        req = Req.new([base_url: url, headers: [{"x-api-key", api_key}], retry: false] ++ req_opts)
+
+        case Req.get(req, url: "/api/assets/#{asset_id}/thumbnail", params: [size: "preview"]) do
+          {:ok, %{status: 200, body: body}} when is_binary(body) ->
+            conn
+            |> put_resp_header("content-type", "image/jpeg")
+            |> send_resp(200, body)
+
+          _ ->
+            send_resp(conn, 503, "photo fetch failed")
+        end
+
+      _ ->
+        send_resp(conn, 503, "no photo available")
+    end
+  end
+
   match _ do
     send_resp(conn, 404, "not found")
   end
