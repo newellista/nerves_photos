@@ -59,7 +59,7 @@ jobs:
           otp-version: "28"
 
       - name: Install system packages
-        run: sudo apt-get update && sudo apt-get install -y build-essential squashfs-tools libmnl-dev libnl-genl-3-dev
+        run: sudo apt-get update && sudo apt-get install -y build-essential squashfs-tools libmnl-dev libnl-genl-3-dev fwup
 
       - name: Install nerves_bootstrap
         run: mix archive.install hex nerves_bootstrap --force
