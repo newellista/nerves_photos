@@ -63,7 +63,8 @@ jobs:
 
       - name: Install fwup
         run: |
-          curl -L https://github.com/fhunleth/fwup/releases/download/v1.10.2/fwup_1.10.2_amd64.deb -o /tmp/fwup.deb
+          FWUP_VERSION=$(curl -s https://api.github.com/repos/fhunleth/fwup/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+          curl -L "https://github.com/fhunleth/fwup/releases/download/v${FWUP_VERSION}/fwup_${FWUP_VERSION}_amd64.deb" -o /tmp/fwup.deb
           sudo apt-get install -y /tmp/fwup.deb
 
       - name: Install nerves_bootstrap
