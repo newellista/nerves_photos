@@ -50,6 +50,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Generate SSH key for Nerves config
+        run: ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""
+
       - uses: erlef/setup-beam@v1
         with:
           elixir-version: "1.19"
