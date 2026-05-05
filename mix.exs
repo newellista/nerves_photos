@@ -50,7 +50,8 @@ defmodule NervesPhotos.MixProject do
     [
       "deps.get": [
         "deps.get",
-        "cmd patch --forward -p1 -d deps/scenic_driver_local < patches/scenic_driver_local.patch || true"
+        # shell wrapper required: mix cmd doesn't invoke a shell, so < and || must be handled by sh explicitly
+        "cmd sh -c \"patch --forward -p1 -d deps/scenic_driver_local < patches/scenic_driver_local.patch || true\""
       ],
       ci: [
         "compile --warnings-as-errors",
