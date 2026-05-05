@@ -29,9 +29,7 @@ defmodule NervesPhotos.WeatherFetcherTest do
     Req.Test.allow(WeatherFetcher, test_pid, fn -> GenServer.whereis(WeatherFetcher) end)
 
     {:ok, _pid} =
-      start_supervised(
-        {WeatherFetcher, req_options: [plug: {Req.Test, WeatherFetcher}]}
-      )
+      start_supervised({WeatherFetcher, req_options: [plug: {Req.Test, WeatherFetcher}]})
 
     :ok
   end
@@ -39,7 +37,10 @@ defmodule NervesPhotos.WeatherFetcherTest do
   test "current/0 returns ok tuple with weather data" do
     pid = GenServer.whereis(WeatherFetcher)
     :sys.get_state(pid)
-    assert {:ok, %{temp_f: temp, condition: condition, icon_code: code}} = WeatherFetcher.current()
+
+    assert {:ok, %{temp_f: temp, condition: condition, icon_code: code}} =
+             WeatherFetcher.current()
+
     assert is_float(temp) or is_integer(temp)
     assert is_binary(condition)
     assert is_integer(code)
@@ -73,7 +74,9 @@ defmodule NervesPhotos.WeatherFetcherTest do
       )
 
     :sys.get_state(pid)
-    assert {:ok, %{temp_f: 55.0, condition: "Overcast", icon_code: 3}} = GenServer.call(pid, :current)
+
+    assert {:ok, %{temp_f: 55.0, condition: "Overcast", icon_code: 3}} =
+             GenServer.call(pid, :current)
   end
 
   test "current/0 returns :unavailable when fetch fails" do

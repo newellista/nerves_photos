@@ -1,4 +1,5 @@
 defmodule NervesPhotos.Component.SickSun do
+  @moduledoc false
   use Scenic.Component
   import Scenic.Primitives
   alias Scenic.Graph

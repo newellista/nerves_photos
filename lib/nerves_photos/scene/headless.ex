@@ -1,4 +1,5 @@
 defmodule NervesPhotos.Scene.Headless do
+  @moduledoc false
   use GenServer
   require Logger
 
@@ -18,9 +19,11 @@ defmodule NervesPhotos.Scene.Headless do
     case NervesPhotos.ImmichClient.advance() do
       {asset_id, %{date: date, location: location}} ->
         Logger.info("Headless slide: #{asset_id} — #{date}, #{location}")
+
       _ ->
         :ok
     end
+
     {:noreply, state}
   end
 

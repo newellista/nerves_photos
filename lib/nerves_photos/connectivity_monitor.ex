@@ -1,4 +1,5 @@
 defmodule NervesPhotos.ConnectivityMonitor do
+  @moduledoc false
   use GenServer
   require Logger
 
@@ -22,6 +23,20 @@ defmodule NervesPhotos.ConnectivityMonitor do
     {:ok, %{mode: :initializing, connect_timer: nil}}
   end
 
+  @impl true
+  def handle_call(:mode, _from, state) do
+    {:reply, state.mode, state}
+  end
+
+  @impl true
+  def handle_cast({:connect, ssid, psk}, state) do
+    if state.connect_timer, do: Process.cancel_timer(state.connect_timer)
+    apply_client_mode(ssid, psk)
+    timer = Process.send_after(self(), :connect_timeout, @connect_timeout_ms)
+    {:noreply, %{state | mode: :connecting, connect_timer: timer}}
+  end
+
+  @impl true
   def handle_info(:configure_wifi, state) do
     VintageNet.subscribe(["interface", "wlan0", "connection"])
 
@@ -38,20 +53,6 @@ defmodule NervesPhotos.ConnectivityMonitor do
     end
   end
 
-  @impl true
-  def handle_call(:mode, _from, state) do
-    {:reply, state.mode, state}
-  end
-
-  @impl true
-  def handle_cast({:connect, ssid, psk}, state) do
-    if state.connect_timer, do: Process.cancel_timer(state.connect_timer)
-    apply_client_mode(ssid, psk)
-    timer = Process.send_after(self(), :connect_timeout, @connect_timeout_ms)
-    {:noreply, %{state | mode: :connecting, connect_timer: timer}}
-  end
-
-  @impl true
   def handle_info(
         {VintageNet, ["interface", "wlan0", "connection"], _old, :connected, _meta},
         state

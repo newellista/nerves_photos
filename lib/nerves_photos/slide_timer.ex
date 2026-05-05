@@ -1,4 +1,5 @@
 defmodule NervesPhotos.SlideTimer do
+  @moduledoc false
   use GenServer
 
   def start_link(opts \\ []) do

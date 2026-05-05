@@ -68,13 +68,11 @@ defmodule NervesPhotos.IntegrationTest do
     start_supervised!(NervesPhotos.SettingsStore)
 
     start_supervised!(
-      {NervesPhotos.ImmichClient,
-       req_options: [plug: {Req.Test, NervesPhotos.ImmichClient}]}
+      {NervesPhotos.ImmichClient, req_options: [plug: {Req.Test, NervesPhotos.ImmichClient}]}
     )
 
     start_supervised!(
-      {NervesPhotos.WeatherFetcher,
-       req_options: [plug: {Req.Test, NervesPhotos.WeatherFetcher}]}
+      {NervesPhotos.WeatherFetcher, req_options: [plug: {Req.Test, NervesPhotos.WeatherFetcher}]}
     )
 
     start_supervised!(
@@ -84,9 +82,7 @@ defmodule NervesPhotos.IntegrationTest do
        put_fn: fn _key, _bytes -> :ok end}
     )
 
-    start_supervised!(
-      {NervesPhotos.SlideTimer, interval_ms: 50, target: test_pid}
-    )
+    start_supervised!({NervesPhotos.SlideTimer, interval_ms: 50, target: test_pid})
 
     :ok
   end
@@ -112,8 +108,10 @@ defmodule NervesPhotos.IntegrationTest do
   test "WeatherFetcher delivers weather data alongside photo cycle" do
     :sys.get_state(NervesPhotos.WeatherFetcher)
     Process.sleep(50)
+
     assert {:ok, %{temp_f: temp, condition: condition, icon_code: code}} =
              NervesPhotos.WeatherFetcher.current()
+
     assert is_number(temp)
     assert is_binary(condition)
     assert is_integer(code)

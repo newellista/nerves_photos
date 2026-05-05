@@ -1,4 +1,5 @@
 defmodule NervesPhotos.Component.DebugBar do
+  @moduledoc false
   use Scenic.Component
   import Scenic.Primitives
   alias Scenic.Graph
@@ -14,8 +15,11 @@ defmodule NervesPhotos.Component.DebugBar do
 
     graph =
       Graph.build()
-      |> rect({80, 28}, fill: {:color_rgba, {0, 0, 0, 160}},
-           translate: {x, height - 36}, radius: 6)
+      |> rect({80, 28},
+        fill: {:color_rgba, {0, 0, 0, 160}},
+        translate: {x, height - 36},
+        radius: 6
+      )
       |> text(label, fill: :white, font_size: 16, translate: {x + 10, height - 16})
 
     {:ok, push_graph(scene, graph)}

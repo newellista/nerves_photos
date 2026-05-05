@@ -1,4 +1,5 @@
 defmodule NervesPhotos.SettingsServer do
+  @moduledoc false
   def child_spec(_opts) do
     Plug.Cowboy.child_spec(
       scheme: :http,

@@ -106,7 +106,8 @@ config :nerves_photos,
   immich_url: System.get_env("IMMICH_URL"),
   immich_api_key: System.get_env("IMMICH_API_KEY"),
   immich_album_id: System.get_env("IMMICH_ALBUM_ID"),
-  slide_interval_ms: System.get_env("SLIDE_INTERVAL_MS", "30000") |> String.trim() |> String.to_integer(),
+  slide_interval_ms:
+    System.get_env("SLIDE_INTERVAL_MS", "30000") |> String.trim() |> String.to_integer(),
   show_debug: System.get_env("SHOW_DEBUG", "false") == "true",
   headless_mode: System.get_env("HEADLESS_MODE", "false") == "true"
 
