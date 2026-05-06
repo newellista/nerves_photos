@@ -90,7 +90,8 @@ defmodule NervesPhotos.MixProject do
       {:scenic, "~> 0.11.0"},
       # rpi4/rpi5 use DRM; rpi3 uses BCM (VideoCore IV userland)
       {:scenic_driver_local, "~> 0.11",
-       targets: [:rpi3, :rpi4, :rpi5], make_env: %{"SCENIC_LOCAL_TARGET" => "drm"}},
+       targets: [:rpi3, :rpi4, :rpi5],
+       make_env: %{"SCENIC_LOCAL_TARGET" => System.get_env("SCENIC_LOCAL_TARGET", "drm")}},
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
