@@ -59,7 +59,9 @@ defmodule NervesPhotos.SettingsRouter do
       {asset_id, _metadata} ->
         {url, api_key} = NervesPhotos.ImmichClient.connection_info()
         req_opts = Application.get_env(:nerves_photos, :req_options, [])
-        req = Req.new([base_url: url, headers: [{"x-api-key", api_key}], retry: false] ++ req_opts)
+
+        req =
+          Req.new([base_url: url, headers: [{"x-api-key", api_key}], retry: false] ++ req_opts)
 
         case Req.get(req, url: "/api/assets/#{asset_id}/thumbnail", params: [size: "preview"]) do
           {:ok, %{status: 200, body: body}} when is_binary(body) ->
@@ -199,8 +201,15 @@ defmodule NervesPhotos.SettingsRouter do
   end
 
   defp render_metadata_overlay(meta) do
-    date_html = if meta[:date], do: ~s(<div class="meta-date">#{format_photo_date(meta[:date])}</div>), else: ""
-    loc_html = if meta[:location], do: ~s(<div class="meta-location">#{Plug.HTML.html_escape(meta[:location])}</div>), else: ""
+    date_html =
+      if meta[:date],
+        do: ~s(<div class="meta-date">#{format_photo_date(meta[:date])}</div>),
+        else: ""
+
+    loc_html =
+      if meta[:location],
+        do: ~s(<div class="meta-location">#{Plug.HTML.html_escape(meta[:location])}</div>),
+        else: ""
 
     if date_html == "" and loc_html == "" do
       ""
@@ -241,8 +250,15 @@ defmodule NervesPhotos.SettingsRouter do
   # happen during the restart window after POST /settings stops services.
   defp safe_call(name, msg, default) do
     case Process.whereis(name) do
-      nil -> default
-      pid -> try do GenServer.call(pid, msg, 2_000) catch :exit, _ -> default end
+      nil ->
+        default
+
+      pid ->
+        try do
+          GenServer.call(pid, msg, 2_000)
+        catch
+          :exit, _ -> default
+        end
     end
   end
 

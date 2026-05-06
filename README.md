@@ -140,6 +140,14 @@ mix test
 
 No hardware or network connection needed.
 
+## Git hooks
+
+A pre-commit hook that enforces `mix format` is committed in `.hooks/`. Install it once after cloning:
+
+```bash
+ln -sf ../../.hooks/pre-commit .git/hooks/pre-commit
+```
+
 ---
 
 ## Settings storage

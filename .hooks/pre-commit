@@ -1,0 +1,5 @@
+#!/bin/sh
+mix format --check-formatted || {
+  echo "Formatting errors found. Run 'mix format' to fix, then re-stage."
+  exit 1
+}

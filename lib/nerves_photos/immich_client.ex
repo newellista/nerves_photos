@@ -201,6 +201,7 @@ defmodule NervesPhotos.ImmichClient do
   end
 
   defp normalize_url(nil), do: nil
+
   defp normalize_url(url) do
     if String.starts_with?(url, ["http://", "https://"]), do: url, else: "http://#{url}"
   end
