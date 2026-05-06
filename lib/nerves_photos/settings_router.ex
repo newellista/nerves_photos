@@ -37,11 +37,18 @@ defmodule NervesPhotos.SettingsRouter do
 
     if ssid = params["wifi_ssid"] do
       psk = params["wifi_psk"] || ""
-      NervesPhotos.SettingsStore.put(:wifi_ssid, ssid)
-      NervesPhotos.SettingsStore.put(:wifi_psk, psk)
+      old_ssid = NervesPhotos.SettingsStore.get(:wifi_ssid)
+      old_psk = NervesPhotos.SettingsStore.get(:wifi_psk) || ""
+      wifi_changed = ssid != old_ssid || psk != ""
+      effective_psk = if psk != "", do: psk, else: old_psk
 
-      if pid = Process.whereis(NervesPhotos.ConnectivityMonitor) do
-        GenServer.cast(pid, {:connect, ssid, psk})
+      NervesPhotos.SettingsStore.put(:wifi_ssid, ssid)
+      if psk != "", do: NervesPhotos.SettingsStore.put(:wifi_psk, psk)
+
+      if wifi_changed do
+        if pid = Process.whereis(NervesPhotos.ConnectivityMonitor) do
+          GenServer.cast(pid, {:connect, ssid, effective_psk})
+        end
       end
     end
 
