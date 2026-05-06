@@ -7,7 +7,10 @@ defmodule NervesPhotos.SettingsRouterTest do
 
   defmodule ImmichStub do
     use GenServer
-    def start_link(state), do: GenServer.start_link(__MODULE__, state, name: NervesPhotos.ImmichClient)
+
+    def start_link(state),
+      do: GenServer.start_link(__MODULE__, state, name: NervesPhotos.ImmichClient)
+
     def init(state), do: {:ok, state}
     def handle_call(:current, _, state), do: {:reply, state.current, state}
     def handle_call(:connection_info, _, state), do: {:reply, state.connection_info, state}
@@ -16,15 +19,23 @@ defmodule NervesPhotos.SettingsRouterTest do
 
   defmodule WeatherStub do
     use GenServer
-    def start_link(state), do: GenServer.start_link(__MODULE__, state, name: NervesPhotos.WeatherFetcher)
+
+    def start_link(state),
+      do: GenServer.start_link(__MODULE__, state, name: NervesPhotos.WeatherFetcher)
+
     def init(state), do: {:ok, state}
     def handle_call(:current, _, state), do: {:reply, state.current, state}
   end
 
   setup do
-    for mod <- [NervesPhotos.ImmichClient, NervesPhotos.WeatherFetcher, NervesPhotos.SettingsStore] do
+    for mod <- [
+          NervesPhotos.ImmichClient,
+          NervesPhotos.WeatherFetcher,
+          NervesPhotos.SettingsStore
+        ] do
       if pid = Process.whereis(mod), do: GenServer.stop(pid)
     end
+
     Application.delete_env(:nerves_photos, :req_options)
     :ok
   end
@@ -78,7 +89,9 @@ defmodule NervesPhotos.SettingsRouterTest do
 
   describe "GET /current" do
     setup do
-      start_supervised!({NervesPhotos.SettingsStore, [path: "/tmp/nerves_photos_test_settings.json"]})
+      start_supervised!(
+        {NervesPhotos.SettingsStore, [path: "/tmp/nerves_photos_test_settings.json"]}
+      )
 
       start_supervised!(
         {ImmichStub,
@@ -89,9 +102,7 @@ defmodule NervesPhotos.SettingsRouterTest do
          }}
       )
 
-      start_supervised!(
-        {WeatherStub, %{current: {:ok, %{temp_f: 72.5, condition: "Sunny"}}}}
-      )
+      start_supervised!({WeatherStub, %{current: {:ok, %{temp_f: 72.5, condition: "Sunny"}}}})
 
       :ok
     end
@@ -123,7 +134,10 @@ defmodule NervesPhotos.SettingsRouterTest do
 
     test "shows Reconnecting banner and no photo when disconnected" do
       stop_supervised!(ImmichStub)
-      start_supervised!({ImmichStub, %{current: :disconnected, connection_info: {"", ""}, queue_position: {0, 0}}})
+
+      start_supervised!(
+        {ImmichStub, %{current: :disconnected, connection_info: {"", ""}, queue_position: {0, 0}}}
+      )
 
       conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "Reconnecting..."
@@ -132,7 +146,10 @@ defmodule NervesPhotos.SettingsRouterTest do
 
     test "shows Loading message when loading" do
       stop_supervised!(ImmichStub)
-      start_supervised!({ImmichStub, %{current: :loading, connection_info: {"", ""}, queue_position: {0, 0}}})
+
+      start_supervised!(
+        {ImmichStub, %{current: :loading, connection_info: {"", ""}, queue_position: {0, 0}}}
+      )
 
       conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "Loading..."
@@ -141,7 +158,10 @@ defmodule NervesPhotos.SettingsRouterTest do
 
     test "shows no photos message when album is empty" do
       stop_supervised!(ImmichStub)
-      start_supervised!({ImmichStub, %{current: :empty, connection_info: {"", ""}, queue_position: {0, 0}}})
+
+      start_supervised!(
+        {ImmichStub, %{current: :empty, connection_info: {"", ""}, queue_position: {0, 0}}}
+      )
 
       conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "No photos found in album"
@@ -150,7 +170,11 @@ defmodule NervesPhotos.SettingsRouterTest do
 
     test "shows not configured message" do
       stop_supervised!(ImmichStub)
-      start_supervised!({ImmichStub, %{current: :not_configured, connection_info: {nil, nil}, queue_position: {0, 0}}})
+
+      start_supervised!(
+        {ImmichStub,
+         %{current: :not_configured, connection_info: {nil, nil}, queue_position: {0, 0}}}
+      )
 
       conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "Not configured"
