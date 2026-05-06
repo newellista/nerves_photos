@@ -27,7 +27,7 @@ defmodule NervesPhotos.ImmichClient do
     end
 
     state = %{
-      url: fetch.(:url, :immich_url),
+      url: fetch.(:url, :immich_url) |> normalize_url(),
       api_key: fetch.(:api_key, :immich_api_key),
       album_id: fetch.(:album_id, :immich_album_id),
       req_options: opts[:req_options] || [],
@@ -198,5 +198,10 @@ defmodule NervesPhotos.ImmichClient do
 
   defp current_photo(%{queue: queue, index: index}) do
     Enum.at(queue, index)
+  end
+
+  defp normalize_url(nil), do: nil
+  defp normalize_url(url) do
+    if String.starts_with?(url, ["http://", "https://"]), do: url, else: "http://#{url}"
   end
 end
