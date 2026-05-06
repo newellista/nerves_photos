@@ -149,7 +149,7 @@ Settings are persisted to `/data/nerves_photos/settings.json` on the device's wr
 | Key | Type | Description |
 |-----|------|-------------|
 | `immich_url` | string | Base URL of your Immich server, e.g. `http://192.168.1.10:2283` |
-| `immich_api_key` | string | API key from Immich → Account Settings → API Keys |
+| `immich_api_key` | string | API key from Immich → Account Settings → API Keys (requires `asset.read` + `asset.view` permissions) |
 | `immich_album_id` | string | UUID of the album to display |
 | `slide_interval_ms` | integer | Milliseconds between slides (default: 30 000) |
 | `wifi_ssid` | string | WiFi network name |

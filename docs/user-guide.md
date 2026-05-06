@@ -124,7 +124,9 @@ This is the same address you use to open Immich in a browser.
 #### API Key
 1. In Immich, click your profile picture (top-right) → **Account Settings**
 2. Scroll to **API Keys** → click **New API Key**
-3. Give it a name (e.g. "NervesPhotos") and copy the key shown
+3. Give it a name (e.g. "NervesPhotos")
+4. Enable at minimum the **`asset.read`** and **`asset.view`** permissions (or grant all permissions)
+5. Copy the key shown
 
 #### Album ID
 1. In Immich, open the album you want to display
