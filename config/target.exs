@@ -53,7 +53,7 @@ config :nerves_ssh,
 #
 # See https://github.com/nerves-networking/vintage_net for more information
 config :vintage_net,
-  regulatory_domain: "00",
+  regulatory_domain: "US",
   config: [
     # wlan0 is managed at runtime by NervesPhotos.ConnectivityMonitor.
     # It opens an AP on first boot (no saved WiFi) or connects to saved credentials.
