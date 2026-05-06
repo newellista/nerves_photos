@@ -62,7 +62,7 @@ config :vintage_net,
     {"eth0",
      %{
        type: VintageNetEthernet,
-       ipv4: %{method: :dhcp}
+       ipv4: %{method: :linklocal}
      }}
   ]
 
