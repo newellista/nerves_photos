@@ -54,11 +54,12 @@ defmodule NervesPhotos.ConnectivityMonitor do
   end
 
   def handle_info(
-        {VintageNet, ["interface", "wlan0", "connection"], _old, :connected, _meta},
-        state
-      ) do
+        {VintageNet, ["interface", "wlan0", "connection"], _old, status, _meta},
+        %{mode: :connecting} = state
+      )
+      when status in [:lan, :internet] do
     if state.connect_timer, do: Process.cancel_timer(state.connect_timer)
-    Logger.info("ConnectivityMonitor: WiFi connected")
+    Logger.info("ConnectivityMonitor: WiFi connected (#{status})")
     {:noreply, %{state | mode: :client, connect_timer: nil}}
   end
 
