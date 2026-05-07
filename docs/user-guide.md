@@ -1,6 +1,6 @@
 # NervesPhotos — User Guide
 
-NervesPhotos turns a Raspberry Pi into a digital photo frame. It pulls photos from your self-hosted [Immich](https://immich.app) library and displays them in a full-screen slideshow on any HDMI monitor or TV. Current weather and photo details (date taken, location) appear as small overlays in the corners.
+NervesPhotos turns a Raspberry Pi into a digital photo frame. It pulls photos from one or more sources — Immich albums and/or Google Photos shared albums — and displays them in a shuffled slideshow on any HDMI monitor or TV. Current weather and photo details (date taken, location) appear as small overlays in the corners.
 
 ---
 
@@ -21,30 +21,29 @@ NervesPhotos turns a Raspberry Pi into a digital photo frame. It pulls photos fr
 
 | Service | What it does | Cost |
 |---------|-------------|------|
-| [Immich](https://immich.app) | Stores and organizes your photos. Must be self-hosted on your home network or a server you control. | Free, open-source |
+| [Immich](https://immich.app) | Self-hosted photo library. Optional — you can use Google Photos instead. | Free, open-source |
 | [Open-Meteo](https://open-meteo.com) | Provides weather data. NervesPhotos contacts it automatically — you do not need an account. | Free |
 
-> **Immich must already be set up** before you can use NervesPhotos. See the [Immich installation guide](https://immich.app/docs/install/docker-compose) if you haven't done that yet.
+You need at least one photo source configured: an Immich album or a Google Photos shared album link.
 
 ---
 
 ## How it works
 
 ```
-  Your Immich server                NervesPhotos device
-  ┌──────────────┐                  ┌──────────────────────┐
-  │              │  fetch album ──► │                      │
-  │  Photo album │ ◄─ thumbnails ── │  Downloads photos    │
-  │              │                  │  Displays slideshow  │
-  └──────────────┘                  │  Shows weather       │
-                                    │  Shows photo details │
-  Open-Meteo (internet)             └──────────────────────┘
-  ┌──────────────┐
+  Immich server / Google Photos    NervesPhotos device
+  ┌──────────────────────┐         ┌──────────────────────┐
+  │ Immich album(s)      │ ◄────── │                      │
+  │ Google Photos albums │ ──────► │  Downloads photos    │
+  └──────────────────────┘         │  Displays slideshow  │
+                                   │  Shows weather       │
+  Open-Meteo (internet)            │  Shows photo details │
+  ┌──────────────┐                 └──────────────────────┘
   │ Weather API  │ ◄── polls every 15 min
   └──────────────┘
 ```
 
-On boot, the device connects to your WiFi and starts displaying photos from the album you configured. It shuffles the album on each full cycle. While it runs, it periodically updates the weather display and advances photos on the configured interval (default: 30 seconds).
+On boot, the device connects to your WiFi and starts downloading photos from all configured sources, merging them into a single shuffled pool. While it runs, it periodically updates the weather display and advances photos on the configured interval (default: 30 seconds).
 
 ---
 
@@ -89,10 +88,9 @@ You should see the NervesPhotos settings page:
 ┌────────────────────────────────────┐
 │       NervesPhotos Settings        │
 │                                    │
-│  IMMICH                            │
-│  Server URL  [________________]    │
-│  API Key     [________________]    │
-│  Album ID    [________________]    │
+│  PHOTO SOURCES                     │
+│  Manage via API:                   │
+│  POST /settings/photo_sources      │
 │                                    │
 │  WEATHER                           │
 │  ZIP Code    [________________]    │
@@ -110,45 +108,67 @@ You should see the NervesPhotos settings page:
 
 ---
 
-### Step 4 — Configure Immich
-
-You need three pieces of information from your Immich installation:
-
-#### Server URL
-The address of your Immich server on your local network. For example:
-- `http://192.168.1.50:2283`
-- `http://photos.home:2283`
-
-This is the same address you use to open Immich in a browser.
-
-#### API Key
-1. In Immich, click your profile picture (top-right) → **Account Settings**
-2. Scroll to **API Keys** → click **New API Key**
-3. Give it a name (e.g. "NervesPhotos")
-4. Enable at minimum the **`asset.read`** and **`asset.view`** permissions (or grant all permissions)
-5. Copy the key shown
-
-#### Album ID
-1. In Immich, open the album you want to display
-2. Look at the URL in your browser — it will look like:
-   `http://your-immich/albums/a1b2c3d4-e5f6-...`
-3. Copy the long ID after `/albums/`
-
----
-
-### Step 5 — Configure WiFi
+### Step 4 — Configure WiFi
 
 Fill in the **SSID** (your WiFi network name) and **Password** fields so the device can connect to your home network.
 
 ---
 
-### Step 6 — Save and connect
+### Step 5 — Save and connect
 
 Click **Save**. The device will:
 1. Save all settings
 2. Switch from the setup access point to your WiFi network
-3. Start downloading photos from Immich
-4. Begin the slideshow within a few seconds
+3. Begin polling for photo sources (you'll add these in Step 6)
+
+Your phone/laptop will lose the `NervesPhotos-Setup` connection — switch back to your normal WiFi network.
+
+---
+
+### Step 6 — Add photo sources
+
+Once the device is on your network, add photo sources via the API from any device on the same network.
+
+#### Add an Immich album
+
+You need three pieces of information from your Immich installation:
+
+**Server URL** — the address of your Immich server (e.g. `http://192.168.1.50:2283`)
+
+**API Key** — from Immich → Account Settings → API Keys → New API Key. Enable at minimum `asset.read` and `asset.view` permissions.
+
+**Album ID** — open the album in Immich and copy the UUID from the URL (`/albums/<uuid>`).
+
+```bash
+curl -X POST http://nerves.local/settings/photo_sources \
+  -H "Content-Type: application/json" \
+  -d '{"type":"immich","url":"http://192.168.1.10:2283","api_key":"your-key","album_id":"your-album-uuid"}'
+```
+
+#### Add a Google Photos shared album
+
+1. In Google Photos, open the album you want to share
+2. Click Share → Create link → copy the `https://photos.app.goo.gl/...` URL
+
+```bash
+curl -X POST http://nerves.local/settings/photo_sources \
+  -H "Content-Type: application/json" \
+  -d '{"type":"google_photos","share_url":"https://photos.app.goo.gl/yoursharelink"}'
+```
+
+> **Google Photos note:** NervesPhotos fetches the shared album page and extracts photo URLs. This is a best-effort approach — it may break if Google changes the share page format. OAuth support is planned for a future release.
+
+#### Manage existing sources
+
+```bash
+# List all configured sources (with their 0-based indexes)
+curl http://nerves.local/settings/photo_sources
+
+# Remove source at index 0
+curl -X DELETE http://nerves.local/settings/photo_sources/0
+```
+
+Photos from all sources are merged into a single shuffled queue. The slideshow begins as soon as at least one source loads successfully.
 
 Your phone/laptop will lose the `NervesPhotos-Setup` connection — switch back to your normal WiFi network.
 
@@ -209,22 +229,24 @@ If `nerves.local` doesn't resolve, try the device's IP address instead. You can 
 
 ### Photos are not showing / screen says "Reconnecting..."
 
-The device cannot reach your Immich server.
+The device cannot reach one or more photo sources.
 
 1. Make sure the Pi is on your WiFi (check the router).
-2. Check that Immich is running — open it in your browser from another device.
-3. Verify the Server URL in settings is correct and uses `http://` (not `https://` unless you configured TLS).
-4. Make sure your Immich server allows connections from local network devices — check its Docker port mapping (`2283:2283` should be exposed).
-5. The Pi and your Immich server must be on the same local network or the server must be reachable from the Pi's network.
+2. For Immich sources: check that Immich is running — open it in your browser from another device.
+3. For Immich sources: verify the Server URL is correct and uses `http://` (not `https://` unless you configured TLS).
+4. For Immich sources: make sure your server allows connections from local network devices — check its Docker port mapping (`2283:2283` should be exposed).
+5. The Pi and any Immich server must be on the same local network or reachable from the Pi's network.
+6. For Google Photos sources: confirm the share link is still valid — open it in a browser to verify.
 
 ---
 
-### Screen says "No photos found in album"
+### Screen says "No photos found"
 
-The album exists in Immich but is empty, or the Album ID is wrong.
+All configured sources returned empty results.
 
-1. Open Immich and confirm the album has photos in it.
-2. Re-copy the Album ID from the URL — it is easy to accidentally copy an extra character.
+1. For Immich: open Immich and confirm the album has photos in it. Re-copy the Album ID from the URL — it is easy to accidentally copy an extra character.
+2. For Google Photos: open the shared album link in a browser. If the album is empty or the link has been revoked, no photos will appear.
+3. Confirm at least one photo source has been added: `curl http://nerves.local/settings/photo_sources`
 
 ---
 
@@ -250,7 +272,7 @@ The device cannot reach the Open-Meteo API. This requires an internet connection
 ### I need to reset everything / start over
 
 1. Connect to **NervesPhotos-Setup** (the device falls back to AP mode automatically if it can't connect to WiFi).
-2. Open **http://192.168.4.1/settings** and correct the WiFi or Immich settings.
+2. Open **http://192.168.4.1/settings** and correct the WiFi settings. Then re-add your photo sources via the API once back on the network.
 
 If you need a complete factory reset, re-flash the SD card with the firmware image.
 
@@ -274,7 +296,8 @@ NervesPhotos makes the following outbound network connections:
 
 | Destination | Purpose | Data sent |
 |-------------|---------|-----------|
-| Your Immich server | Download photos | API key, album ID |
+| Your Immich server (if configured) | Download photos | API key, album ID |
+| Google Photos CDN (if configured) | Download photos | None (public shared album URLs) |
 | `api.open-meteo.com` | Weather forecast | Your latitude/longitude |
 | `ip-api.com` | IP geolocation (only if no ZIP set) | Your public IP address |
 
