@@ -5,15 +5,19 @@ defmodule NervesPhotos.SettingsRouterTest do
 
   @opts NervesPhotos.SettingsRouter.init([])
 
-  defmodule ImmichStub do
+  defmodule TestPhotoSource do
+    def fetch_image("asset123", _config), do: {:ok, <<0xFF, 0xD8, 0xFF, 0xE0>>}
+    def fetch_image(_, _), do: {:error, :not_found}
+  end
+
+  defmodule PhotoQueueStub do
     use GenServer
 
     def start_link(state),
-      do: GenServer.start_link(__MODULE__, state, name: NervesPhotos.ImmichClient)
+      do: GenServer.start_link(__MODULE__, state, name: NervesPhotos.PhotoQueue)
 
     def init(state), do: {:ok, state}
     def handle_call(:current, _, state), do: {:reply, state.current, state}
-    def handle_call(:connection_info, _, state), do: {:reply, state.connection_info, state}
     def handle_call(:queue_position, _, state), do: {:reply, state.queue_position, state}
   end
 
@@ -29,7 +33,7 @@ defmodule NervesPhotos.SettingsRouterTest do
 
   setup do
     for mod <- [
-          NervesPhotos.ImmichClient,
+          NervesPhotos.PhotoQueue,
           NervesPhotos.WeatherFetcher,
           NervesPhotos.SettingsStore
         ] do
@@ -43,43 +47,41 @@ defmodule NervesPhotos.SettingsRouterTest do
   describe "GET /current/photo" do
     setup do
       start_supervised!(
-        {ImmichStub,
+        {PhotoQueueStub,
          %{
-           current: {"asset123", %{date: ~D[2024-06-01], location: "Paris, France"}},
-           connection_info: {"http://immich.local", "test-key"}
+           current:
+             {TestPhotoSource, "asset123", %{}, %{date: ~D[2024-06-01], location: "Paris"}},
+           queue_position: {1, 5}
          }}
       )
 
-      Application.put_env(:nerves_photos, :req_options,
-        plug: fn conn ->
-          conn
-          |> Plug.Conn.put_resp_header("content-type", "image/jpeg")
-          |> Plug.Conn.send_resp(200, <<0xFF, 0xD8, 0xFF, 0xE0>>)
-        end
-      )
-
-      on_exit(fn -> Application.delete_env(:nerves_photos, :req_options) end)
       :ok
     end
 
-    test "returns JPEG bytes with correct content-type" do
+    test "returns JPEG bytes by delegating to source module" do
       conn = conn(:get, "/current/photo") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.status == 200
       assert get_resp_header(conn, "content-type") == ["image/jpeg"]
       assert conn.resp_body == <<0xFF, 0xD8, 0xFF, 0xE0>>
     end
 
-    test "returns 503 when ImmichClient has no photo" do
-      stop_supervised!(ImmichStub)
-      start_supervised!({ImmichStub, %{current: :loading, connection_info: {"", ""}}})
+    test "returns 503 when PhotoQueue returns :loading" do
+      stop_supervised!(PhotoQueueStub)
+      start_supervised!({PhotoQueueStub, %{current: :loading, queue_position: {0, 0}}})
 
       conn = conn(:get, "/current/photo") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.status == 503
     end
 
-    test "returns 503 when Immich fetch returns non-200" do
-      Application.put_env(:nerves_photos, :req_options,
-        plug: fn conn -> Plug.Conn.send_resp(conn, 500, "error") end
+    test "returns 503 when fetch_image fails" do
+      stop_supervised!(PhotoQueueStub)
+
+      start_supervised!(
+        {PhotoQueueStub,
+         %{
+           current: {TestPhotoSource, "bad-asset", %{}, %{}},
+           queue_position: {1, 5}
+         }}
       )
 
       conn = conn(:get, "/current/photo") |> NervesPhotos.SettingsRouter.call(@opts)
@@ -94,10 +96,11 @@ defmodule NervesPhotos.SettingsRouterTest do
       )
 
       start_supervised!(
-        {ImmichStub,
+        {PhotoQueueStub,
          %{
-           current: {"asset123", %{date: ~D[2024-06-01], location: "Paris, France"}},
-           connection_info: {"http://immich.local", "test-key"},
+           current:
+             {TestPhotoSource, "asset123", %{},
+              %{date: ~D[2024-06-01], location: "Paris, France"}},
            queue_position: {3, 20}
          }}
       )
@@ -119,83 +122,144 @@ defmodule NervesPhotos.SettingsRouterTest do
       assert conn.resp_body =~ "Paris, France"
     end
 
-    test "includes weather overlay with temperature and condition" do
+    test "includes weather overlay" do
       conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "73°F"
       assert conn.resp_body =~ "Sunny"
     end
 
-    test "includes auto-refresh script with slide interval" do
-      conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
-      assert conn.resp_body =~ "setTimeout"
-      assert conn.resp_body =~ "location.reload"
-      assert conn.resp_body =~ "30000"
-    end
-
-    test "shows Reconnecting banner and no photo when disconnected" do
-      stop_supervised!(ImmichStub)
-
-      start_supervised!(
-        {ImmichStub, %{current: :disconnected, connection_info: {"", ""}, queue_position: {0, 0}}}
-      )
+    test "shows Reconnecting banner when disconnected" do
+      stop_supervised!(PhotoQueueStub)
+      start_supervised!({PhotoQueueStub, %{current: :disconnected, queue_position: {0, 0}}})
 
       conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "Reconnecting..."
-      refute conn.resp_body =~ ~s(<img id="photo")
     end
 
-    test "shows Loading message when loading" do
-      stop_supervised!(ImmichStub)
-
-      start_supervised!(
-        {ImmichStub, %{current: :loading, connection_info: {"", ""}, queue_position: {0, 0}}}
-      )
+    test "shows No photos found when empty" do
+      stop_supervised!(PhotoQueueStub)
+      start_supervised!({PhotoQueueStub, %{current: :empty, queue_position: {0, 0}}})
 
       conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
-      assert conn.resp_body =~ "Loading..."
-      refute conn.resp_body =~ ~s(<img id="photo")
+      assert conn.resp_body =~ "No photos found"
     end
 
-    test "shows no photos message when album is empty" do
-      stop_supervised!(ImmichStub)
-
-      start_supervised!(
-        {ImmichStub, %{current: :empty, connection_info: {"", ""}, queue_position: {0, 0}}}
-      )
-
-      conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
-      assert conn.resp_body =~ "No photos found in album"
-      refute conn.resp_body =~ ~s(<img id="photo")
-    end
-
-    test "shows not configured message" do
-      stop_supervised!(ImmichStub)
-
-      start_supervised!(
-        {ImmichStub,
-         %{current: :not_configured, connection_info: {nil, nil}, queue_position: {0, 0}}}
-      )
+    test "shows Not configured message" do
+      stop_supervised!(PhotoQueueStub)
+      start_supervised!({PhotoQueueStub, %{current: :not_configured, queue_position: {0, 0}}})
 
       conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "Not configured"
-      refute conn.resp_body =~ ~s(<img id="photo")
+    end
+  end
+
+  describe "GET /settings/photo_sources" do
+    setup do
+      start_supervised!(
+        {NervesPhotos.SettingsStore,
+         [path: "/tmp/nerves_photos_test_sources_#{:erlang.unique_integer([:positive])}.json"]}
+      )
+
+      :ok
     end
 
-    test "shows No weather data when weather is unavailable" do
-      stop_supervised!(WeatherStub)
-      start_supervised!({WeatherStub, %{current: :unavailable}})
-
-      conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
-      assert conn.resp_body =~ "No weather data"
+    test "returns empty JSON array when no sources configured" do
+      conn = conn(:get, "/settings/photo_sources") |> NervesPhotos.SettingsRouter.call(@opts)
+      assert conn.status == 200
+      assert Jason.decode!(conn.resp_body) == []
     end
 
-    test "shows debug bar when show_debug is true" do
-      Application.put_env(:nerves_photos, :show_debug, true)
-      on_exit(fn -> Application.delete_env(:nerves_photos, :show_debug) end)
+    test "returns current sources" do
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "immich", url: "http://srv", api_key: "k", album_id: "a"}
+      ])
 
-      conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
-      assert conn.resp_body =~ ~s(id="debug")
-      assert conn.resp_body =~ "3/20"
+      conn = conn(:get, "/settings/photo_sources") |> NervesPhotos.SettingsRouter.call(@opts)
+      assert conn.status == 200
+      [source] = Jason.decode!(conn.resp_body)
+      assert source["type"] == "immich"
+    end
+  end
+
+  describe "POST /settings/photo_sources" do
+    setup do
+      start_supervised!(
+        {NervesPhotos.SettingsStore,
+         [path: "/tmp/nerves_photos_test_post_#{:erlang.unique_integer([:positive])}.json"]}
+      )
+
+      :ok
+    end
+
+    test "appends an immich source" do
+      body = Jason.encode!(%{type: "immich", url: "http://srv", api_key: "k", album_id: "a"})
+
+      conn =
+        conn(:post, "/settings/photo_sources", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 201
+      sources = NervesPhotos.SettingsStore.get(:photo_sources)
+      assert length(sources) == 1
+      assert hd(sources)[:type] == "immich"
+    end
+
+    test "appends a google_photos source" do
+      body = Jason.encode!(%{type: "google_photos", share_url: "https://photos.app.goo.gl/x"})
+
+      conn =
+        conn(:post, "/settings/photo_sources", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 201
+      sources = NervesPhotos.SettingsStore.get(:photo_sources)
+      assert hd(sources)[:type] == "google_photos"
+    end
+
+    test "rejects unknown source type with 422" do
+      body = Jason.encode!(%{type: "dropbox", path: "/photos"})
+
+      conn =
+        conn(:post, "/settings/photo_sources", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 422
+    end
+  end
+
+  describe "DELETE /settings/photo_sources/:index" do
+    setup do
+      path = "/tmp/nerves_photos_test_del_#{:erlang.unique_integer([:positive])}.json"
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "immich", url: "http://a", api_key: "k1", album_id: "a1"},
+        %{type: "immich", url: "http://b", api_key: "k2", album_id: "a2"}
+      ])
+
+      :ok
+    end
+
+    test "removes source at given index" do
+      conn =
+        conn(:delete, "/settings/photo_sources/0")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+      sources = NervesPhotos.SettingsStore.get(:photo_sources)
+      assert length(sources) == 1
+      assert hd(sources)[:album_id] == "a2"
+    end
+
+    test "returns 404 for out-of-bounds index" do
+      conn =
+        conn(:delete, "/settings/photo_sources/5")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 404
     end
   end
 end

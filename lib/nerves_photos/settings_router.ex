@@ -3,8 +3,10 @@ defmodule NervesPhotos.SettingsRouter do
   use Plug.Router
 
   plug(:match)
-  plug(Plug.Parsers, parsers: [:urlencoded])
+  plug(Plug.Parsers, parsers: [:urlencoded, :json], json_decoder: Jason)
   plug(:dispatch)
+
+  @valid_source_types ~w(immich google_photos)
 
   get "/settings" do
     settings = NervesPhotos.SettingsStore.all()
@@ -19,12 +21,6 @@ defmodule NervesPhotos.SettingsRouter do
 
   post "/settings" do
     params = conn.body_params
-
-    if url = params["immich_url"], do: NervesPhotos.SettingsStore.put(:immich_url, url)
-    if key = params["immich_api_key"], do: NervesPhotos.SettingsStore.put(:immich_api_key, key)
-
-    if album = params["immich_album_id"],
-      do: NervesPhotos.SettingsStore.put(:immich_album_id, album)
 
     if interval = params["slide_interval_ms"] do
       case Integer.parse(interval) do
@@ -52,7 +48,7 @@ defmodule NervesPhotos.SettingsRouter do
       end
     end
 
-    for mod <- [NervesPhotos.ImmichClient, NervesPhotos.WeatherFetcher, NervesPhotos.SlideTimer] do
+    for mod <- [NervesPhotos.PhotoQueue, NervesPhotos.WeatherFetcher, NervesPhotos.SlideTimer] do
       if pid = Process.whereis(mod), do: GenServer.stop(pid, :normal)
     end
 
@@ -61,17 +57,50 @@ defmodule NervesPhotos.SettingsRouter do
     |> send_resp(303, "")
   end
 
+  get "/settings/photo_sources" do
+    sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
+
+    conn
+    |> put_resp_header("content-type", "application/json")
+    |> send_resp(200, Jason.encode!(sources))
+  end
+
+  post "/settings/photo_sources" do
+    source = for {k, v} <- conn.body_params, into: %{}, do: {String.to_atom(k), v}
+
+    if source[:type] in @valid_source_types do
+      current = NervesPhotos.SettingsStore.get(:photo_sources) || []
+      NervesPhotos.SettingsStore.put(:photo_sources, current ++ [source])
+
+      conn
+      |> put_resp_header("content-type", "application/json")
+      |> send_resp(201, Jason.encode!(source))
+    else
+      send_resp(conn, 422, Jason.encode!(%{error: "unknown source type"}))
+    end
+  end
+
+  delete "/settings/photo_sources/:index" do
+    sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
+    idx = String.to_integer(conn.params["index"])
+
+    if idx >= 0 and idx < length(sources) do
+      updated = List.delete_at(sources, idx)
+      NervesPhotos.SettingsStore.put(:photo_sources, updated)
+
+      conn
+      |> put_resp_header("content-type", "application/json")
+      |> send_resp(200, Jason.encode!(updated))
+    else
+      send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
+    end
+  end
+
   get "/current/photo" do
-    case NervesPhotos.ImmichClient.current() do
-      {asset_id, _metadata} ->
-        {url, api_key} = NervesPhotos.ImmichClient.connection_info()
-        req_opts = Application.get_env(:nerves_photos, :req_options, [])
-
-        req =
-          Req.new([base_url: url, headers: [{"x-api-key", api_key}], retry: false] ++ req_opts)
-
-        case Req.get(req, url: "/api/assets/#{asset_id}/thumbnail", params: [size: "preview"]) do
-          {:ok, %{status: 200, body: body}} when is_binary(body) ->
+    case safe_call(NervesPhotos.PhotoQueue, :current, nil) do
+      {module, source_id, config, _meta} ->
+        case module.fetch_image(source_id, config) do
+          {:ok, body} when is_binary(body) ->
             conn
             |> put_resp_header("content-type", "image/jpeg")
             |> send_resp(200, body)
@@ -90,12 +119,12 @@ defmodule NervesPhotos.SettingsRouter do
     show_debug = Application.get_env(:nerves_photos, :show_debug, false)
 
     weather = safe_call(NervesPhotos.WeatherFetcher, :current, :unavailable)
-    immich_current = safe_call(NervesPhotos.ImmichClient, :current, :loading)
-    {current_pos, total} = safe_call(NervesPhotos.ImmichClient, :queue_position, {0, 0})
+    photo_current = safe_call(NervesPhotos.PhotoQueue, :current, :loading)
+    {current_pos, total} = safe_call(NervesPhotos.PhotoQueue, :queue_position, {0, 0})
 
     {has_photo, metadata, scene_status} =
-      case immich_current do
-        {_id, meta} -> {true, meta, :ok}
+      case photo_current do
+        {_module, _id, _config, meta} -> {true, meta, :ok}
         status -> {false, %{date: nil, location: nil}, status}
       end
 
@@ -253,8 +282,6 @@ defmodule NervesPhotos.SettingsRouter do
 
   defp format_photo_date(date), do: Calendar.strftime(date, "%B %-d, %Y")
 
-  # Guards against the process dying between whereis/1 and the call, which can
-  # happen during the restart window after POST /settings stops services.
   defp safe_call(name, msg, default) do
     case Process.whereis(name) do
       nil ->
@@ -295,16 +322,12 @@ defmodule NervesPhotos.SettingsRouter do
     <h1>NervesPhotos Settings</h1>
     #{wifi_banner}
     <form method="POST" action="/settings">
-      <h2>Immich</h2>
-      <label>Server URL
-        <input name="immich_url" value="#{Map.get(s, :immich_url) || ""}">
-      </label>
-      <label>API Key
-        <input name="immich_api_key" value="#{Map.get(s, :immich_api_key) || ""}">
-      </label>
-      <label>Album ID
-        <input name="immich_album_id" value="#{Map.get(s, :immich_album_id) || ""}">
-      </label>
+      <h2>Photo Sources</h2>
+      <p style="font-size:14px;color:#555;margin-top:8px">
+        Manage photo sources via the API:<br>
+        <code>GET/POST /settings/photo_sources</code><br>
+        <code>DELETE /settings/photo_sources/:index</code>
+      </p>
       <h2>Weather</h2>
       <label>ZIP Code (leave blank to use IP location)
         <input name="weather_zip" value="#{Map.get(s, :weather_zip) || ""}">
