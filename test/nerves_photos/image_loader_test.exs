@@ -5,43 +5,37 @@ defmodule NervesPhotos.ImageLoaderTest do
 
   @fake_jpeg <<0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0>>
 
+  defmodule GoodSource do
+    def fetch_image("asset-1", _config), do: {:ok, <<0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0>>}
+    def fetch_image(_, _), do: {:error, :not_found}
+  end
+
+  defmodule BadSource do
+    def fetch_image(_id, _config), do: {:error, {:http, 404}}
+  end
+
   setup do
-    test_pid = self()
-
-    Req.Test.stub(ImageLoader, fn conn ->
-      if String.contains?(conn.request_path, "/thumbnail") do
-        conn
-        |> Plug.Conn.put_resp_header("content-type", "image/jpeg")
-        |> Plug.Conn.send_resp(200, @fake_jpeg)
-      else
-        Req.Test.json(conn, %{"error" => "not found"})
-      end
-    end)
-
-    Req.Test.allow(ImageLoader, test_pid, fn -> GenServer.whereis(ImageLoader) end)
-
     {:ok, _pid} =
-      start_supervised(
-        {ImageLoader,
-         connection_info_fn: fn -> {"http://immich.test", "test-key"} end,
-         req_options: [plug: {Req.Test, ImageLoader}],
-         put_fn: fn _key, _bytes -> :ok end}
-      )
+      start_supervised({ImageLoader, put_fn: fn _key, _bytes -> :ok end})
 
     :ok
   end
 
   test "load/2 sends {:image_loaded, key} to caller on success" do
-    ImageLoader.load("asset-1", self())
+    asset = {GoodSource, "asset-1", %{}, %{date: nil, location: nil}}
+    ImageLoader.load(asset, self())
     assert_receive {:image_loaded, "photo:current"}, 500
   end
 
-  test "load/2 sends {:image_load_error, asset_id} on HTTP failure" do
-    Req.Test.stub(ImageLoader, fn conn ->
-      Plug.Conn.send_resp(conn, 404, "not found")
-    end)
+  test "load/2 sends {:image_load_error, asset} on fetch failure" do
+    asset = {BadSource, "bad-asset", %{}, %{date: nil, location: nil}}
+    ImageLoader.load(asset, self())
+    assert_receive {:image_load_error, ^asset}, 500
+  end
 
-    ImageLoader.load("bad-asset", self())
-    assert_receive {:image_load_error, "bad-asset"}, 500
+  test "load/3 accepts a custom stream key" do
+    asset = {GoodSource, "asset-1", %{}, %{date: nil, location: nil}}
+    ImageLoader.load(asset, self(), "photo:custom")
+    assert_receive {:image_loaded, "photo:custom"}, 500
   end
 end

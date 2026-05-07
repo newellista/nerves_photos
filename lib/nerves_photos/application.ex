@@ -18,7 +18,7 @@ defmodule NervesPhotos.Application do
       defp target_children do
         [
           NervesPhotos.SettingsStore,
-          NervesPhotos.ImmichClient,
+          NervesPhotos.PhotoQueue,
           NervesPhotos.WeatherFetcher,
           NervesPhotos.SlideTimer
         ]
@@ -30,7 +30,7 @@ defmodule NervesPhotos.Application do
           NervesPhotos.SettingsStore,
           NervesPhotos.ConnectivityMonitor,
           NervesPhotos.SettingsServer,
-          NervesPhotos.ImmichClient,
+          NervesPhotos.PhotoQueue,
           NervesPhotos.WeatherFetcher,
           NervesPhotos.SlideTimer
         ]

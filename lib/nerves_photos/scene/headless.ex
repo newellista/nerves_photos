@@ -16,8 +16,8 @@ defmodule NervesPhotos.Scene.Headless do
 
   @impl true
   def handle_info({:slide_timer, :next_photo}, state) do
-    case NervesPhotos.ImmichClient.advance() do
-      {asset_id, %{date: date, location: location}} ->
+    case NervesPhotos.PhotoQueue.advance() do
+      {_module, asset_id, _config, %{date: date, location: location}} ->
         Logger.info("Headless slide: #{asset_id} — #{date}, #{location}")
 
       _ ->

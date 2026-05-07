@@ -1,18 +1,18 @@
 # NervesPhotos
 
-A Nerves-based digital photo frame that displays a rotating slideshow from an [Immich](https://immich.app) self-hosted photo library. Runs on Raspberry Pi hardware with a connected HDMI display. Includes a built-in web UI for configuration and overlays for weather and photo metadata.
+A Nerves-based digital photo frame that displays a rotating slideshow from multiple photo sources — any combination of Immich albums and Google Photos shared albums. Runs on Raspberry Pi hardware with a connected HDMI display. Includes a built-in web UI for configuration and overlays for weather and photo metadata.
 
 ---
 
 ## Features
 
-- Fetches photos from a configured Immich album and displays them in a full-screen slideshow
+- Fetches photos from multiple configured sources (Immich albums, Google Photos shared albums) merged into a single shuffled pool
 - Fades smoothly between photos (20-step crossfade at ~60 fps)
 - Overlays photo date and location (from EXIF) in the bottom-left corner
 - Overlays current temperature and weather condition in the bottom-right corner
 - Weather fetched every 15 minutes from [Open-Meteo](https://open-meteo.com) (free, no API key)
 - Location resolved by ZIP code or falls back to IP geolocation
-- Web UI served on port 80 for configuration (WiFi, Immich, slide interval)
+- Web UI served on port 80 for configuration (WiFi, slide interval); photo sources managed via JSON API
 - AP bootstrap: if no WiFi credentials are saved, the device opens a `NervesPhotos-Setup` access point so the web UI is reachable on first boot without a pre-configured network
 
 ---
@@ -38,7 +38,7 @@ A Nerves-based digital photo frame that displays a rotating slideshow from an [I
 │  SettingsStore       ← persistent JSON at /data/...     │
 │  ConnectivityMonitor ← owns wlan0 via VintageNet        │
 │  SettingsServer      ← Cowboy HTTP on port 80           │
-│  ImmichClient        ← fetches & queues album assets    │
+│  PhotoQueue          ← fetches all sources concurrently │
 │  WeatherFetcher      ← polls Open-Meteo every 15 min   │
 │  SlideTimer          ← sends :next_photo tick           │
 │  ImageLoader         ← downloads preview images        │
@@ -49,13 +49,14 @@ A Nerves-based digital photo frame that displays a rotating slideshow from an [I
 ### Data flow
 
 ```
-SlideTimer ──:next_photo──► Scene.Main ──advance()──► ImmichClient
+SlideTimer ──:next_photo──► Scene.Main ──advance()──► PhotoQueue
                                 │                         │
-                          asset_id + metadata         shuffled queue
+                          4-tuple asset             shuffled queue
+                          {module,id,cfg,meta}      (all sources merged)
                                 │
-                          ImageLoader.load()
+                          ImageLoader.load(asset)
                                 │
-                          GET /api/assets/:id/thumbnail
+                          module.fetch_image(id, cfg)
                                 │
                     Scenic.Assets.Stream.put()
                                 │
@@ -69,8 +70,11 @@ SlideTimer ──:next_photo──► Scene.Main ──advance()──► Immich
 | `SettingsStore` | GenServer; reads/writes `/data/nerves_photos/settings.json`; all settings keyed as atoms |
 | `ConnectivityMonitor` | GenServer; configures `wlan0` — client mode if credentials saved, AP mode otherwise; falls back to AP on 30s connect timeout |
 | `SettingsServer` | Thin `child_spec` wrapper; serves `SettingsRouter` via Cowboy on port 80 |
-| `SettingsRouter` | Plug router; `GET /settings` renders HTML form; `POST /settings` persists settings and live-restarts ImmichClient/WeatherFetcher/SlideTimer |
-| `ImmichClient` | GenServer; fetches album asset list, shuffles into a queue, serves `current/0` and `advance/0`; states: `:not_configured`, `:loading`, `:disconnected`, `:empty`; exponential backoff on errors |
+| `SettingsRouter` | Plug router; `GET /settings` renders HTML form; `POST /settings` persists settings and live-restarts PhotoQueue/WeatherFetcher/SlideTimer; `GET/POST/DELETE /settings/photo_sources` manages sources |
+| `PhotoSource` | Behaviour; defines `list_assets/1` and `fetch_image/2` callbacks |
+| `Sources.Immich` | Stateless; fetches Immich album asset lists and thumbnail images |
+| `Sources.GooglePhotos` | Stateless; fetches Google Photos shared album pages and images |
+| `PhotoQueue` | GenServer; fetches all sources concurrently via `Task.async_stream`, merges into a shuffled queue, serves `current/0` and `advance/0`; states: `:not_configured`, `:loading`, `:disconnected`, `:empty`; exponential backoff on errors |
 | `WeatherFetcher` | GenServer; resolves location (ZIP → Open-Meteo geocoding, else IP → ip-api.com), fetches current conditions every 15 min |
 | `ImageLoader` | GenServer; spawns a `Task` per image fetch; pushes JPEG bytes into `Scenic.Assets.Stream` |
 | `Scene.Main` | Scenic scene; manages photo/fade/overlay rendering; drives transitions |
@@ -85,7 +89,7 @@ SlideTimer ──:next_photo──► Scene.Main ──advance()──► Immich
 - **nerves_bootstrap ~> 1.15** archive: `mix archive.install hex nerves_bootstrap`
 - **fwup**: `brew install fwup` (macOS) or see [fwup releases](https://github.com/fwup-home/fwup/releases)
 - An SSH public key in `~/.ssh/` — required by `config/target.exs` for device access
-- A running [Immich](https://immich.app) instance with at least one album
+- At least one photo source: a running [Immich](https://immich.app) instance or a Google Photos shared album link
 
 ---
 
@@ -96,16 +100,43 @@ Copy `.env.example` to `.env.work` and fill in your values (file is gitignored):
 ```bash
 export MIX_TARGET=rpi5          # rpi0 | rpi3 | rpi4 | rpi5
 
-# Optional: pre-seed Immich settings at compile time
-# (can also be set at runtime via the web UI)
-export IMMICH_URL=http://192.168.1.10:2283
-export IMMICH_API_KEY=your_api_key
-export IMMICH_ALBUM_ID=your_album_uuid
 export SLIDE_INTERVAL_MS=30000
 export SHOW_DEBUG=false
 ```
 
-WiFi credentials are managed at runtime via the web UI — not via env vars.
+WiFi credentials and photo sources are managed at runtime — not via env vars.
+
+---
+
+## Managing photo sources
+
+Photo sources are configured at runtime via the HTTP API — no env vars or firmware rebuild needed.
+
+### Add an Immich album
+```bash
+curl -X POST http://nerves.local/settings/photo_sources \
+  -H "Content-Type: application/json" \
+  -d '{"type":"immich","url":"http://192.168.1.10:2283","api_key":"your-key","album_id":"your-album-uuid"}'
+```
+
+### Add a Google Photos shared album
+```bash
+curl -X POST http://nerves.local/settings/photo_sources \
+  -H "Content-Type: application/json" \
+  -d '{"type":"google_photos","share_url":"https://photos.app.goo.gl/yoursharelink"}'
+```
+
+### List current sources
+```bash
+curl http://nerves.local/settings/photo_sources
+```
+
+### Remove a source (0-based index)
+```bash
+curl -X DELETE http://nerves.local/settings/photo_sources/0
+```
+
+Photos from all sources are merged into a single shuffled queue.
 
 ---
 
@@ -156,9 +187,7 @@ Settings are persisted to `/data/nerves_photos/settings.json` on the device's wr
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `immich_url` | string | Base URL of your Immich server, e.g. `http://192.168.1.10:2283` |
-| `immich_api_key` | string | API key from Immich → Account Settings → API Keys (requires `asset.read` + `asset.view` permissions) |
-| `immich_album_id` | string | UUID of the album to display |
+| `photo_sources` | list | JSON list of source configs. Each entry has `type` plus type-specific fields. Default: `[]` |
 | `slide_interval_ms` | integer | Milliseconds between slides (default: 30 000) |
 | `wifi_ssid` | string | WiFi network name |
 | `wifi_psk` | string | WiFi password |
@@ -179,9 +208,13 @@ lib/nerves_photos/
 ├── application.ex           # OTP Application, builds supervision tree
 ├── settings_store.ex        # Persistent key/value store
 ├── settings_server.ex       # Cowboy child_spec wrapper
-├── settings_router.ex       # Plug HTTP router + HTML settings form
+├── settings_router.ex       # Plug HTTP router + HTML settings form + photo_sources API
 ├── connectivity_monitor.ex  # WiFi / AP bootstrap manager
-├── immich_client.ex         # Immich album fetcher and photo queue
+├── photo_source.ex          # Behaviour: list_assets/1, fetch_image/2
+├── photo_queue.ex           # Multi-source photo queue (replaces ImmichClient)
+├── sources/
+│   ├── immich.ex            # Immich album source
+│   └── google_photos.ex     # Google Photos shared album source
 ├── weather_fetcher.ex       # Open-Meteo weather poller
 ├── slide_timer.ex           # Periodic :next_photo sender
 ├── image_loader.ex          # Async image downloader → Scenic stream
@@ -203,7 +236,7 @@ lib/nerves_photos/
 
 **Add a new display overlay:** create a `Scenic.Component` module in `lib/nerves_photos/component/`, then call `YourComponent.add_to_graph/3` inside `Scene.Main.render/1`.
 
-**Add a new photo source:** implement a module with `current/0 → {asset_id, metadata} | atom`, `advance/0`, `queue_position/0 → {integer, integer}`, and `connection_info/0 → {url, api_key}` matching the `ImmichClient` contract, then swap it in `application.ex`.
+**Add a new photo source:** implement the `NervesPhotos.PhotoSource` behaviour — `list_assets/1` (given the source config map, return `{:ok, [{id, %{date, location}}]}`) and `fetch_image/2` (given `source_id` and config, return `{:ok, binary}`). Register the module in `PhotoQueue.source_module/1` and add the type string to `@valid_source_types` in `SettingsRouter`.
 
 **Support a new hardware target:** add the `nerves_system_*` dep to `mix.exs`, add the `MIX_TARGET` case in `setup_nerves_env/0` with the correct `SCENIC_LOCAL_TARGET` value (`drm` or `bcm`), and add the target atom to `scenic_driver_local`'s `targets:` list.
 

@@ -3,9 +3,7 @@ defmodule NervesPhotos.SettingsStore do
   use GenServer
 
   @keys [
-    :immich_url,
-    :immich_api_key,
-    :immich_album_id,
+    :photo_sources,
     :slide_interval_ms,
     :wifi_ssid,
     :wifi_psk,
@@ -52,9 +50,7 @@ defmodule NervesPhotos.SettingsStore do
 
   defp load(path) do
     defaults = %{
-      immich_url: Application.get_env(:nerves_photos, :immich_url),
-      immich_api_key: Application.get_env(:nerves_photos, :immich_api_key),
-      immich_album_id: Application.get_env(:nerves_photos, :immich_album_id),
+      photo_sources: Application.get_env(:nerves_photos, :photo_sources, []),
       slide_interval_ms: Application.get_env(:nerves_photos, :slide_interval_ms, 30_000),
       wifi_ssid: nil,
       wifi_psk: nil,
