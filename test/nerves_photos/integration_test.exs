@@ -1,8 +1,6 @@
 defmodule NervesPhotos.IntegrationTest do
   use ExUnit.Case
 
-  @fake_jpeg <<0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0>>
-
   defmodule FakeImmich do
     def list_assets(_config) do
       {:ok,
