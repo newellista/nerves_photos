@@ -18,6 +18,7 @@ defmodule NervesPhotos.Application do
       defp target_children do
         [
           NervesPhotos.SettingsStore,
+          NervesPhotos.SettingsServer,
           NervesPhotos.PhotoQueue,
           NervesPhotos.WeatherFetcher,
           NervesPhotos.SlideTimer
