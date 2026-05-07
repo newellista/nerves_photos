@@ -8,3 +8,4 @@
 !.env.example
 .superpowers/
 .worktrees/
+.claude/settings.local.json
