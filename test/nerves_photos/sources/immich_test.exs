@@ -65,4 +65,36 @@ defmodule NervesPhotos.Sources.ImmichTest do
       assert {:error, {:http, 500}} = Immich.list_assets(config)
     end
   end
+
+  describe "fetch_image/2" do
+    @fake_jpeg <<0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0>>
+
+    setup do
+      Req.Test.stub(ImmichFetchTest, fn conn ->
+        if conn.request_path =~ "/thumbnail" do
+          conn
+          |> Plug.Conn.put_resp_header("content-type", "image/jpeg")
+          |> Plug.Conn.send_resp(200, @fake_jpeg)
+        else
+          Plug.Conn.send_resp(conn, 404, "not found")
+        end
+      end)
+
+      config = Map.put(@config, :req_options, plug: {Req.Test, ImmichFetchTest})
+      {:ok, config: config, fake_jpeg: @fake_jpeg}
+    end
+
+    test "returns ok with binary on success", %{config: config, fake_jpeg: fake_jpeg} do
+      assert {:ok, ^fake_jpeg} = Immich.fetch_image("asset-1", config)
+    end
+
+    test "returns error on HTTP failure", %{config: config} do
+      Req.Test.stub(ImmichFetchErrorTest, fn conn ->
+        Plug.Conn.send_resp(conn, 404, "not found")
+      end)
+
+      config = Map.put(config, :req_options, plug: {Req.Test, ImmichFetchErrorTest}, retry: false)
+      assert {:error, {:http, 404}} = Immich.fetch_image("missing", config)
+    end
+  end
 end

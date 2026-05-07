@@ -25,7 +25,18 @@ defmodule NervesPhotos.Sources.Immich do
   end
 
   @impl true
-  def fetch_image(_source_id, _config), do: {:error, :not_implemented}
+  def fetch_image(source_id, %{url: url, api_key: api_key} = config) do
+    req_options = Map.get(config, :req_options, [])
+
+    req =
+      Req.new([base_url: normalize_url(url), headers: [{"x-api-key", api_key}]] ++ req_options)
+
+    case Req.get(req, url: "/api/assets/#{source_id}/thumbnail", params: [size: "preview"]) do
+      {:ok, %{status: 200, body: body}} when is_binary(body) -> {:ok, body}
+      {:ok, %{status: status}} -> {:error, {:http, status}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   defp parse_asset(asset) do
     date =
