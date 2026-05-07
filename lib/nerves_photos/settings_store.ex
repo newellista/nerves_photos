@@ -21,7 +21,7 @@ defmodule NervesPhotos.SettingsStore do
 
   @impl true
   def init(opts) do
-    path = opts[:path] || @default_path
+    path = opts[:path] || Application.get_env(:nerves_photos, :settings_path, @default_path)
     settings = load(path)
     {:ok, %{path: path, settings: settings}}
   end

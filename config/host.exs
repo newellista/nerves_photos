@@ -2,6 +2,10 @@ import Config
 
 # Add configuration that is only needed when running on the host here.
 
+config :nerves_photos,
+  settings_path: Path.expand("~/.nerves_photos/settings.json"),
+  http_port: 4000
+
 config :vintage_net,
   resolvconf: "/tmp/nerves_photos_resolv.conf",
   persistence_dir: "/tmp/nerves_photos_vintage_net"
