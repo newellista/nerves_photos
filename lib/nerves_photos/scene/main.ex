@@ -42,9 +42,9 @@ defmodule NervesPhotos.Scene.Main do
 
   @impl GenServer
   def handle_info({:slide_timer, :next_photo}, %{assigns: %{transition: :idle}} = scene) do
-    case NervesPhotos.ImmichClient.advance() do
-      {asset_id, metadata} ->
-        NervesPhotos.ImageLoader.load(asset_id, self())
+    case NervesPhotos.PhotoQueue.advance() do
+      {_module, _source_id, _config, metadata} = asset ->
+        NervesPhotos.ImageLoader.load(asset, self())
         {:noreply, assign(scene, metadata: metadata, transition: :loading)}
 
       :disconnected ->
@@ -54,6 +54,9 @@ defmodule NervesPhotos.Scene.Main do
         {:noreply, assign(scene, empty_album: true)}
 
       :loading ->
+        {:noreply, scene}
+
+      :not_configured ->
         {:noreply, scene}
     end
   end
@@ -120,7 +123,7 @@ defmodule NervesPhotos.Scene.Main do
     } = scene.assigns
 
     weather = NervesPhotos.WeatherFetcher.current()
-    {current, total} = NervesPhotos.ImmichClient.queue_position()
+    {current, total} = NervesPhotos.PhotoQueue.queue_position()
     show_debug = Application.get_env(:nerves_photos, :show_debug, false)
     meta = metadata || %{date: nil, location: nil}
     fade_alpha = round(fade_opacity * 255)
