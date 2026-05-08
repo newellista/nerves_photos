@@ -416,7 +416,32 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
-  defp render_wifi_section(_s, _wifi_mode), do: ""
+  defp render_wifi_section(s, wifi_mode) do
+    ssid = Plug.HTML.html_escape(Map.get(s, :wifi_ssid) || "")
+
+    status_text =
+      case wifi_mode do
+        :client -> "Connected"
+        :connecting -> "Connecting..."
+        :ap -> "Access Point (setup mode)"
+        _ -> "Unknown"
+      end
+
+    """
+    <div class="section-title">WiFi</div>
+    <form method="POST" action="/settings">
+      <label>Network Name (SSID)
+        <input type="text" name="wifi_ssid" value="#{ssid}">
+      </label>
+      <label>Password
+        <input type="password" name="wifi_psk" placeholder="Leave blank to keep current">
+      </label>
+      <div class="wifi-status">Status: #{status_text}</div>
+      <button type="submit" class="btn-primary">Save</button>
+    </form>
+    """
+  end
+
   defp render_sources_section(_s), do: ""
   defp render_users_placeholder, do: ""
   defp render_settings_js, do: ""

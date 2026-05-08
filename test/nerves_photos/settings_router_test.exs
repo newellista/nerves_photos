@@ -299,6 +299,17 @@ defmodule NervesPhotos.SettingsRouterTest do
       assert body =~ ~s(name="weather_zip")
       assert body =~ "90210"
     end
+
+    test "wifi section contains ssid field and status" do
+      NervesPhotos.SettingsStore.put(:wifi_ssid, "MyNetwork")
+
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(name="wifi_ssid")
+      assert body =~ "MyNetwork"
+      assert body =~ ~s(name="wifi_psk")
+      assert body =~ "Status:"
+    end
   end
 
   describe "PUT /settings/photo_sources/:index" do
