@@ -600,7 +600,12 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
-  defp render_users_placeholder, do: ""
+  defp render_users_placeholder do
+    """
+    <div class="section-title" style="color:#94a3b8">Users</div>
+    <p style="color:#94a3b8;font-size:14px">Coming soon. User management will be added in a future release.</p>
+    """
+  end
 
   defp render_settings_js do
     """

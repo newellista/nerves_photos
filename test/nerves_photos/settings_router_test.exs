@@ -331,6 +331,11 @@ defmodule NervesPhotos.SettingsRouterTest do
       assert body =~ "function submitAddForm"
       assert body =~ "function submitEditForm"
     end
+
+    test "users section shows coming soon message" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      assert conn.resp_body =~ "Coming soon"
+    end
   end
 
   describe "GET /settings photo sources section" do
