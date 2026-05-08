@@ -354,7 +354,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       body = conn.resp_body
       assert body =~ ~s(id="add-immich-form")
-      assert body =~ ~s(name="url")
+      assert body =~ ~s(placeholder="http://192.168.1.10:2283")
       assert body =~ ~s(name="api_key")
       assert body =~ ~s(name="album_id")
     end
