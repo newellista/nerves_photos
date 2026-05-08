@@ -262,4 +262,68 @@ defmodule NervesPhotos.SettingsRouterTest do
       assert conn.status == 404
     end
   end
+
+  describe "PUT /settings/photo_sources/:index" do
+    setup do
+      path = "/tmp/nerves_photos_test_put_#{:erlang.unique_integer([:positive])}.json"
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "immich", url: "http://a", api_key: "k1", album_id: "a1"},
+        %{type: "google_photos", share_url: "https://photos.app.goo.gl/x"}
+      ])
+
+      :ok
+    end
+
+    test "replaces source at given index" do
+      body = Jason.encode!(%{type: "immich", url: "http://new", api_key: "k2", album_id: "a2"})
+
+      conn =
+        conn(:put, "/settings/photo_sources/0", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+      sources = NervesPhotos.SettingsStore.get(:photo_sources)
+      assert length(sources) == 2
+      assert hd(sources)[:url] == "http://new"
+      assert hd(sources)[:album_id] == "a2"
+    end
+
+    test "returns updated source as JSON" do
+      body = Jason.encode!(%{type: "immich", url: "http://new", api_key: "k2", album_id: "a2"})
+
+      conn =
+        conn(:put, "/settings/photo_sources/0", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+      result = Jason.decode!(conn.resp_body)
+      assert result["url"] == "http://new"
+    end
+
+    test "returns 404 for out-of-bounds index" do
+      body = Jason.encode!(%{type: "immich", url: "http://new", api_key: "k2", album_id: "a2"})
+
+      conn =
+        conn(:put, "/settings/photo_sources/5", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 404
+    end
+
+    test "returns 422 for unknown source type" do
+      body = Jason.encode!(%{type: "dropbox", path: "/photos"})
+
+      conn =
+        conn(:put, "/settings/photo_sources/0", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 422
+    end
+  end
 end

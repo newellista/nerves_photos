@@ -96,6 +96,28 @@ defmodule NervesPhotos.SettingsRouter do
     end
   end
 
+  put "/settings/photo_sources/:index" do
+    sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
+    idx = String.to_integer(conn.params["index"])
+    source = for {k, v} <- conn.body_params, into: %{}, do: {String.to_atom(k), v}
+
+    cond do
+      idx < 0 or idx >= length(sources) ->
+        send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
+
+      source[:type] not in @valid_source_types ->
+        send_resp(conn, 422, Jason.encode!(%{error: "unknown source type"}))
+
+      true ->
+        updated = List.replace_at(sources, idx, source)
+        NervesPhotos.SettingsStore.put(:photo_sources, updated)
+
+        conn
+        |> put_resp_header("content-type", "application/json")
+        |> send_resp(200, Jason.encode!(source))
+    end
+  end
+
   get "/current/photo" do
     case safe_call(NervesPhotos.PhotoQueue, :current, nil) do
       {module, source_id, config, _meta} ->
