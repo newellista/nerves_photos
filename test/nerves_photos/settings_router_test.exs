@@ -261,6 +261,14 @@ defmodule NervesPhotos.SettingsRouterTest do
 
       assert conn.status == 404
     end
+
+    test "returns 400 for non-integer index" do
+      conn =
+        conn(:delete, "/settings/photo_sources/abc")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 400
+    end
   end
 
   describe "GET /settings sidebar layout" do
@@ -467,6 +475,17 @@ defmodule NervesPhotos.SettingsRouterTest do
       assert conn.status == 200
       sources = NervesPhotos.SettingsStore.get(:photo_sources)
       assert hd(sources)[:api_key] == "k1"
+    end
+
+    test "returns 400 for non-integer index" do
+      body = Jason.encode!(%{type: "immich", url: "http://new", api_key: "k2", album_id: "a2"})
+
+      conn =
+        conn(:put, "/settings/photo_sources/abc", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 400
     end
   end
 end

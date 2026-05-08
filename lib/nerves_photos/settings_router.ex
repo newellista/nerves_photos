@@ -7,6 +7,7 @@ defmodule NervesPhotos.SettingsRouter do
   plug(:dispatch)
 
   @valid_source_types ~w(immich google_photos)
+  @source_param_keys ~w(type url api_key album_id share_url)
 
   get "/settings" do
     settings = NervesPhotos.SettingsStore.all()
@@ -66,7 +67,7 @@ defmodule NervesPhotos.SettingsRouter do
   end
 
   post "/settings/photo_sources" do
-    source = for {k, v} <- conn.body_params, into: %{}, do: {String.to_atom(k), v}
+    source = atomize_source_params(conn.body_params)
 
     if source[:type] in @valid_source_types do
       current = NervesPhotos.SettingsStore.get(:photo_sources) || []
@@ -82,40 +83,47 @@ defmodule NervesPhotos.SettingsRouter do
 
   delete "/settings/photo_sources/:index" do
     sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
-    idx = String.to_integer(conn.params["index"])
 
-    if idx >= 0 and idx < length(sources) do
-      updated = List.delete_at(sources, idx)
-      NervesPhotos.SettingsStore.put(:photo_sources, updated)
+    case Integer.parse(conn.params["index"]) do
+      {idx, ""} when idx >= 0 and idx < length(sources) ->
+        updated = List.delete_at(sources, idx)
+        NervesPhotos.SettingsStore.put(:photo_sources, updated)
 
-      conn
-      |> put_resp_header("content-type", "application/json")
-      |> send_resp(200, Jason.encode!(updated))
-    else
-      send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
+        conn
+        |> put_resp_header("content-type", "application/json")
+        |> send_resp(200, Jason.encode!(updated))
+
+      {idx, ""} when idx >= 0 ->
+        send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
+
+      _ ->
+        send_resp(conn, 400, Jason.encode!(%{error: "invalid index"}))
     end
   end
 
   put "/settings/photo_sources/:index" do
     sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
-    idx = String.to_integer(conn.params["index"])
-    source = for {k, v} <- conn.body_params, into: %{}, do: {String.to_atom(k), v}
+    source = atomize_source_params(conn.body_params)
 
-    cond do
-      idx < 0 or idx >= length(sources) ->
+    case Integer.parse(conn.params["index"]) do
+      {idx, ""} when idx >= 0 and idx < length(sources) ->
+        if source[:type] in @valid_source_types do
+          merged = Map.merge(Enum.at(sources, idx), source)
+          updated = List.replace_at(sources, idx, merged)
+          NervesPhotos.SettingsStore.put(:photo_sources, updated)
+
+          conn
+          |> put_resp_header("content-type", "application/json")
+          |> send_resp(200, Jason.encode!(merged))
+        else
+          send_resp(conn, 422, Jason.encode!(%{error: "unknown source type"}))
+        end
+
+      {idx, ""} when idx >= 0 ->
         send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
 
-      source[:type] not in @valid_source_types ->
-        send_resp(conn, 422, Jason.encode!(%{error: "unknown source type"}))
-
-      true ->
-        merged = Map.merge(Enum.at(sources, idx), source)
-        updated = List.replace_at(sources, idx, merged)
-        NervesPhotos.SettingsStore.put(:photo_sources, updated)
-
-        conn
-        |> put_resp_header("content-type", "application/json")
-        |> send_resp(200, Jason.encode!(merged))
+      _ ->
+        send_resp(conn, 400, Jason.encode!(%{error: "invalid index"}))
     end
   end
 
@@ -594,4 +602,12 @@ defmodule NervesPhotos.SettingsRouter do
 
   defp render_users_placeholder, do: ""
   defp render_settings_js, do: ""
+
+  defp atomize_source_params(params) do
+    for k <- @source_param_keys,
+        v = params[k],
+        v != nil,
+        into: %{},
+        do: {String.to_existing_atom(k), v}
+  end
 end
