@@ -471,7 +471,7 @@ defmodule NervesPhotos.SettingsRouter do
             </div>
             <div class="source-actions">
               <button class="btn-secondary" type="button" onclick="toggleEdit(#{idx})">Edit</button>
-              <button class="btn-danger" type="button" onclick="deleteSource('/settings/photo_sources/#{idx}')">Delete</button>
+              <button class="btn-danger" type="button" onclick="deleteSource(#{idx})">Delete</button>
             </div>
           </div>
           <div id="edit-form-#{idx}" style="display:none" class="inline-form">
