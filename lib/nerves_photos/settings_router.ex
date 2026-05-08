@@ -445,7 +445,7 @@ defmodule NervesPhotos.SettingsRouter do
       <label>Password
         <input type="password" name="wifi_psk" placeholder="Leave blank to keep current">
       </label>
-      <div class="wifi-status">Status: #{status_text}</div>
+      <div class="wifi-status">Status: #{Plug.HTML.html_escape(status_text)}</div>
       <button type="submit" class="btn-primary">Save</button>
     </form>
     """

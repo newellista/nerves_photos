@@ -91,9 +91,10 @@ defmodule NervesPhotos.SettingsRouterTest do
 
   describe "GET /current" do
     setup do
-      start_supervised!(
-        {NervesPhotos.SettingsStore, [path: "/tmp/nerves_photos_test_settings.json"]}
-      )
+      path = "/tmp/nerves_photos_test_current_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
 
       start_supervised!(
         {PhotoQueueStub,
