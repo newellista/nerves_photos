@@ -29,7 +29,8 @@ defmodule NervesPhotos.MixProject do
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
-      releases: [{@app, release()}]
+      releases: [{@app, release()}],
+      licenses: ["AGPL-3.0-only"]
     ]
   end
 
