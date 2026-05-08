@@ -287,6 +287,18 @@ defmodule NervesPhotos.SettingsRouterTest do
       assert body =~ ~s(id="section-sources" style="display:none")
       assert body =~ ~s(id="section-users" style="display:none")
     end
+
+    test "display section contains slide interval and weather zip fields" do
+      NervesPhotos.SettingsStore.put(:slide_interval_ms, 60_000)
+      NervesPhotos.SettingsStore.put(:weather_zip, "90210")
+
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(name="slide_interval_ms")
+      assert body =~ ~s(value="60")
+      assert body =~ ~s(name="weather_zip")
+      assert body =~ "90210"
+    end
   end
 
   describe "PUT /settings/photo_sources/:index" do

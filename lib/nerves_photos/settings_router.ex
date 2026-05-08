@@ -398,7 +398,24 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
-  defp render_display_section(_s), do: ""
+  defp render_display_section(s) do
+    interval_s = div(Map.get(s, :slide_interval_ms, 30_000), 1_000)
+    zip = Plug.HTML.html_escape(Map.get(s, :weather_zip) || "")
+
+    """
+    <div class="section-title">Display</div>
+    <form method="POST" action="/settings">
+      <label>Slide Interval (seconds)
+        <input type="number" name="slide_interval_ms" min="5" value="#{interval_s}">
+      </label>
+      <label>Weather ZIP Code
+        <input type="text" name="weather_zip" value="#{zip}" placeholder="Leave blank for IP location">
+      </label>
+      <button type="submit" class="btn-primary">Save</button>
+    </form>
+    """
+  end
+
   defp render_wifi_section(_s, _wifi_mode), do: ""
   defp render_sources_section(_s), do: ""
   defp render_users_placeholder, do: ""
