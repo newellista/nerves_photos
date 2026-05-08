@@ -348,7 +348,7 @@ defmodule NervesPhotos.SettingsRouter do
         .section-title { font-size: 18px; font-weight: 600; color: #1e293b; margin-bottom: 24px; }
         label { display: block; margin-top: 16px; font-size: 13px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
         input[type=text], input[type=number], input[type=password] { width: 100%; padding: 8px 10px; margin-top: 4px; box-sizing: border-box; font-size: 15px; border: 1px solid #cbd5e1; border-radius: 4px; }
-        .btn-primary { margin-top: 24px; padding: 9px 20px; background: #3b82f6; color: white; border: none; font-size: 14px; border-radius: 4px; cursor: pointer; }
+        .btn-primary { padding: 9px 20px; background: #3b82f6; color: white; border: none; font-size: 14px; border-radius: 4px; cursor: pointer; }
         .btn-secondary { padding: 7px 14px; background: #e2e8f0; color: #475569; border: none; font-size: 13px; border-radius: 4px; cursor: pointer; }
         .btn-danger { padding: 7px 10px; background: transparent; color: #ef4444; border: 1px solid #fecaca; font-size: 12px; border-radius: 4px; cursor: pointer; }
         .banner { padding: 12px; border-radius: 4px; margin-bottom: 16px; font-size: 14px; }
@@ -420,7 +420,7 @@ defmodule NervesPhotos.SettingsRouter do
       <label>Weather ZIP Code
         <input type="text" name="weather_zip" value="#{zip}" placeholder="Leave blank for IP location">
       </label>
-      <button type="submit" class="btn-primary">Save</button>
+      <button type="submit" class="btn-primary" style="margin-top:24px">Save</button>
     </form>
     """
   end
@@ -446,7 +446,7 @@ defmodule NervesPhotos.SettingsRouter do
         <input type="password" name="wifi_psk" placeholder="Leave blank to keep current">
       </label>
       <div class="wifi-status">Status: #{Plug.HTML.html_escape(status_text)}</div>
-      <button type="submit" class="btn-primary">Save</button>
+      <button type="submit" class="btn-primary" style="margin-top:24px">Save</button>
     </form>
     """
   end
