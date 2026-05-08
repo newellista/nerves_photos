@@ -601,7 +601,88 @@ defmodule NervesPhotos.SettingsRouter do
   end
 
   defp render_users_placeholder, do: ""
-  defp render_settings_js, do: ""
+
+  defp render_settings_js do
+    """
+    <script>
+    var SECTIONS = ['display','wifi','sources','users'];
+
+    function showSection(id) {
+      SECTIONS.forEach(function(s) {
+        var el = document.getElementById('section-' + s);
+        if (el) el.style.display = s === id ? 'block' : 'none';
+      });
+      document.querySelectorAll('.nav-item').forEach(function(el) {
+        el.classList.remove('active');
+      });
+      var active = document.querySelector('[onclick="showSection(\\'' + id + '\\')"]');
+      if (active) active.classList.add('active');
+    }
+
+    function toggleEdit(idx) {
+      var form = document.getElementById('edit-form-' + idx);
+      if (!form) return;
+      var isOpen = form.style.display !== 'none';
+      closeAllForms();
+      if (!isOpen) form.style.display = 'block';
+    }
+
+    function toggleAddForm(type) {
+      var id = type === 'immich' ? 'add-immich-form' : 'add-google-form';
+      var form = document.getElementById(id);
+      if (!form) return;
+      var isOpen = form.style.display !== 'none';
+      closeAllForms();
+      if (!isOpen) form.style.display = 'block';
+    }
+
+    function closeAllForms() {
+      document.querySelectorAll('[id^="edit-form-"]').forEach(function(el) {
+        el.style.display = 'none';
+      });
+      ['add-immich-form','add-google-form'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+    }
+
+    function deleteSource(idx) {
+      fetch('/settings/photo_sources/' + idx, {method: 'DELETE'})
+        .then(function() { location.reload(); });
+    }
+
+    function submitAddForm(event, type) {
+      event.preventDefault();
+      var form = event.target;
+      var data = {};
+      new FormData(form).forEach(function(v, k) { data[k] = v; });
+      fetch('/settings/photo_sources', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      }).then(function(r) {
+        if (r.ok) { location.reload(); }
+        else { r.json().then(function(e) { alert(e.error || 'Save failed'); }); }
+      });
+    }
+
+    function submitEditForm(event, idx) {
+      event.preventDefault();
+      var form = event.target;
+      var data = {};
+      new FormData(form).forEach(function(v, k) { if (v !== '') data[k] = v; });
+      fetch('/settings/photo_sources/' + idx, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      }).then(function(r) {
+        if (r.ok) { location.reload(); }
+        else { r.json().then(function(e) { alert(e.error || 'Save failed'); }); }
+      });
+    }
+    </script>
+    """
+  end
 
   defp atomize_source_params(params) do
     for k <- @source_param_keys,

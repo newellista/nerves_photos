@@ -320,6 +320,17 @@ defmodule NervesPhotos.SettingsRouterTest do
       assert body =~ ~s(name="wifi_psk")
       assert body =~ "Status:"
     end
+
+    test "page includes section-switching JavaScript" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ "function showSection"
+      assert body =~ "function toggleEdit"
+      assert body =~ "function toggleAddForm"
+      assert body =~ "function deleteSource"
+      assert body =~ "function submitAddForm"
+      assert body =~ "function submitEditForm"
+    end
   end
 
   describe "GET /settings photo sources section" do
