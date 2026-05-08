@@ -506,8 +506,45 @@ defmodule NervesPhotos.SettingsRouter do
   end
 
   defp render_edit_form(_source, _idx), do: ""
-  defp render_add_immich_form, do: ""
-  defp render_add_google_form, do: ""
+
+  defp render_add_immich_form do
+    """
+    <div style="font-size:13px;font-weight:600;color:#3b82f6;margin-bottom:12px">Add Immich Album</div>
+    <form onsubmit="submitAddForm(event, 'immich')">
+      <input type="hidden" name="type" value="immich">
+      <label>Server URL
+        <input type="text" name="url" placeholder="http://192.168.1.10:2283">
+      </label>
+      <label>API Key
+        <input type="text" name="api_key" placeholder="Your Immich API key">
+      </label>
+      <label>Album ID
+        <input type="text" name="album_id" placeholder="Album UUID">
+      </label>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" class="btn-secondary" onclick="toggleAddForm('immich')">Cancel</button>
+      </div>
+    </form>
+    """
+  end
+
+  defp render_add_google_form do
+    """
+    <div style="font-size:13px;font-weight:600;color:#10b981;margin-bottom:12px">Add Google Photos Album</div>
+    <form onsubmit="submitAddForm(event, 'google')">
+      <input type="hidden" name="type" value="google_photos">
+      <label>Share URL
+        <input type="text" name="share_url" placeholder="https://photos.app.goo.gl/...">
+      </label>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" class="btn-secondary" onclick="toggleAddForm('google')">Cancel</button>
+      </div>
+    </form>
+    """
+  end
+
   defp render_users_placeholder, do: ""
   defp render_settings_js, do: ""
 end

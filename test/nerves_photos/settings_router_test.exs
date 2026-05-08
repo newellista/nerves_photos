@@ -349,6 +349,22 @@ defmodule NervesPhotos.SettingsRouterTest do
       conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ ~s[onclick="deleteSource(0)"]
     end
+
+    test "add immich form contains required fields" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(id="add-immich-form")
+      assert body =~ ~s(name="url")
+      assert body =~ ~s(name="api_key")
+      assert body =~ ~s(name="album_id")
+    end
+
+    test "add google photos form contains share_url field" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(id="add-google-form")
+      assert body =~ ~s(name="share_url")
+    end
   end
 
   describe "PUT /settings/photo_sources/:index" do
