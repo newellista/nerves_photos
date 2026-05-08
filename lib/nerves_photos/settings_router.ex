@@ -442,7 +442,72 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
-  defp render_sources_section(_s), do: ""
+  defp render_sources_section(s) do
+    sources = Map.get(s, :photo_sources) || []
+
+    source_rows =
+      sources
+      |> Enum.with_index()
+      |> Enum.map_join("\n", fn {source, idx} ->
+        {type_label, type_class, desc} =
+          case source[:type] do
+            "immich" ->
+              host = URI.parse(source[:url] || "").host || source[:url] || ""
+              {"Immich", "source-type-immich", Plug.HTML.html_escape(host)}
+
+            "google_photos" ->
+              {"Google Photos", "source-type-google", "Shared album"}
+
+            other ->
+              {Plug.HTML.html_escape(other), "", ""}
+          end
+
+        """
+        <div class="source-row" id="source-row-#{idx}">
+          <div class="source-header">
+            <div>
+              <span class="source-type #{type_class}">#{type_label}</span>
+              <span class="source-desc">#{desc}</span>
+            </div>
+            <div class="source-actions">
+              <button class="btn-secondary" type="button" onclick="toggleEdit(#{idx})">Edit</button>
+              <button class="btn-danger" type="button" onclick="deleteSource('/settings/photo_sources/#{idx}')">Delete</button>
+            </div>
+          </div>
+          <div id="edit-form-#{idx}" style="display:none" class="inline-form">
+            #{render_edit_form(source, idx)}
+          </div>
+        </div>
+        """
+      end)
+
+    empty_msg =
+      if sources == [],
+        do: ~s(<p style="color:#94a3b8;font-size:14px">No photo sources configured yet.</p>),
+        else: ""
+
+    """
+    <div class="section-title">Photo Sources</div>
+    #{empty_msg}
+    #{source_rows}
+    <div id="add-immich-btn" class="add-source-btn" onclick="toggleAddForm('immich')">+ Add Immich Album</div>
+    <div id="add-google-btn" class="add-source-btn" onclick="toggleAddForm('google')">+ Add Google Photos Album</div>
+    <div id="add-immich-form" style="display:none" class="source-row">
+      <div class="inline-form">
+        #{render_add_immich_form()}
+      </div>
+    </div>
+    <div id="add-google-form" style="display:none" class="source-row">
+      <div class="inline-form">
+        #{render_add_google_form()}
+      </div>
+    </div>
+    """
+  end
+
+  defp render_edit_form(_source, _idx), do: ""
+  defp render_add_immich_form, do: ""
+  defp render_add_google_form, do: ""
   defp render_users_placeholder, do: ""
   defp render_settings_js, do: ""
 end

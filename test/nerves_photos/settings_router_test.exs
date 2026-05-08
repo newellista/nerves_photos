@@ -314,6 +314,43 @@ defmodule NervesPhotos.SettingsRouterTest do
     end
   end
 
+  describe "GET /settings photo sources section" do
+    setup do
+      path = "/tmp/nerves_photos_test_sources_ui_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
+      :ok
+    end
+
+    test "shows empty state when no sources configured" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      assert conn.resp_body =~ "No photo sources configured"
+    end
+
+    test "renders one row per configured source" do
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "immich", url: "http://192.168.1.10:2283", api_key: "k", album_id: "a"},
+        %{type: "google_photos", share_url: "https://photos.app.goo.gl/x"}
+      ])
+
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ "Immich"
+      assert body =~ "192.168.1.10"
+      assert body =~ "Google Photos"
+    end
+
+    test "each source row has a delete button targeting the correct index" do
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "immich", url: "http://srv", api_key: "k", album_id: "a"}
+      ])
+
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      assert conn.resp_body =~ "/settings/photo_sources/0"
+    end
+  end
+
   describe "PUT /settings/photo_sources/:index" do
     setup do
       path = "/tmp/nerves_photos_test_put_#{:erlang.unique_integer([:positive])}.json"
