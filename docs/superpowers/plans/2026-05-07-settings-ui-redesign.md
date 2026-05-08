@@ -510,7 +510,7 @@ describe "GET /settings photo sources section" do
     ])
 
     conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
-    assert conn.resp_body =~ "/settings/photo_sources/0"
+    assert conn.resp_body =~ ~s[onclick="deleteSource(0)"]
   end
 end
 ```

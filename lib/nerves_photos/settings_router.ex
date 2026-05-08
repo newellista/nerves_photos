@@ -459,7 +459,7 @@ defmodule NervesPhotos.SettingsRouter do
               {"Google Photos", "source-type-google", "Shared album"}
 
             other ->
-              {Plug.HTML.html_escape(other), "", ""}
+              {Plug.HTML.html_escape(other || ""), "", ""}
           end
 
         """
