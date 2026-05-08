@@ -155,11 +155,10 @@ defmodule NervesPhotos.SettingsRouterTest do
 
   describe "GET /settings/photo_sources" do
     setup do
-      start_supervised!(
-        {NervesPhotos.SettingsStore,
-         [path: "/tmp/nerves_photos_test_sources_#{:erlang.unique_integer([:positive])}.json"]}
-      )
-
+      path = "/tmp/nerves_photos_test_sources_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
       :ok
     end
 
@@ -183,11 +182,10 @@ defmodule NervesPhotos.SettingsRouterTest do
 
   describe "POST /settings/photo_sources" do
     setup do
-      start_supervised!(
-        {NervesPhotos.SettingsStore,
-         [path: "/tmp/nerves_photos_test_post_#{:erlang.unique_integer([:positive])}.json"]}
-      )
-
+      path = "/tmp/nerves_photos_test_post_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
       :ok
     end
 
@@ -233,7 +231,9 @@ defmodule NervesPhotos.SettingsRouterTest do
   describe "DELETE /settings/photo_sources/:index" do
     setup do
       path = "/tmp/nerves_photos_test_del_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
       start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
 
       NervesPhotos.SettingsStore.put(:photo_sources, [
         %{type: "immich", url: "http://a", api_key: "k1", album_id: "a1"},
@@ -266,7 +266,9 @@ defmodule NervesPhotos.SettingsRouterTest do
   describe "GET /settings sidebar layout" do
     setup do
       path = "/tmp/nerves_photos_test_settings_ui_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
       start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
       :ok
     end
 
@@ -315,7 +317,9 @@ defmodule NervesPhotos.SettingsRouterTest do
   describe "PUT /settings/photo_sources/:index" do
     setup do
       path = "/tmp/nerves_photos_test_put_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
       start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
 
       NervesPhotos.SettingsStore.put(:photo_sources, [
         %{type: "immich", url: "http://a", api_key: "k1", album_id: "a1"},
