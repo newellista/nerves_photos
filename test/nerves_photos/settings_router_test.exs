@@ -365,6 +365,29 @@ defmodule NervesPhotos.SettingsRouterTest do
       assert body =~ ~s(id="add-google-form")
       assert body =~ ~s(name="share_url")
     end
+
+    test "edit form for immich source pre-fills all fields" do
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "immich", url: "http://192.168.1.10:2283", api_key: "mykey", album_id: "abc-uuid"}
+      ])
+
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(id="edit-form-0")
+      assert body =~ "http://192.168.1.10:2283"
+      assert body =~ "abc-uuid"
+    end
+
+    test "edit form for google photos source pre-fills share_url" do
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "google_photos", share_url: "https://photos.app.goo.gl/test123"}
+      ])
+
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(id="edit-form-0")
+      assert body =~ "https://photos.app.goo.gl/test123"
+    end
   end
 
   describe "PUT /settings/photo_sources/:index" do

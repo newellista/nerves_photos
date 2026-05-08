@@ -505,7 +505,53 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
-  defp render_edit_form(_source, _idx), do: ""
+  defp render_edit_form(source, idx) do
+    case source[:type] do
+      "immich" ->
+        url = Plug.HTML.html_escape(source[:url] || "")
+        album_id = Plug.HTML.html_escape(source[:album_id] || "")
+
+        """
+        <div style="font-size:13px;font-weight:600;color:#3b82f6;margin-bottom:12px">Edit Immich Album</div>
+        <form onsubmit="submitEditForm(event, #{idx})">
+          <input type="hidden" name="type" value="immich">
+          <label>Server URL
+            <input type="text" name="url" value="#{url}">
+          </label>
+          <label>API Key
+            <input type="text" name="api_key" placeholder="Leave blank to keep current">
+          </label>
+          <label>Album ID
+            <input type="text" name="album_id" value="#{album_id}">
+          </label>
+          <div style="display:flex;gap:8px;margin-top:16px">
+            <button type="submit" class="btn-primary">Save</button>
+            <button type="button" class="btn-secondary" onclick="toggleEdit(#{idx})">Cancel</button>
+          </div>
+        </form>
+        """
+
+      "google_photos" ->
+        share_url = Plug.HTML.html_escape(source[:share_url] || "")
+
+        """
+        <div style="font-size:13px;font-weight:600;color:#10b981;margin-bottom:12px">Edit Google Photos Album</div>
+        <form onsubmit="submitEditForm(event, #{idx})">
+          <input type="hidden" name="type" value="google_photos">
+          <label>Share URL
+            <input type="text" name="share_url" value="#{share_url}">
+          </label>
+          <div style="display:flex;gap:8px;margin-top:16px">
+            <button type="submit" class="btn-primary">Save</button>
+            <button type="button" class="btn-secondary" onclick="toggleEdit(#{idx})">Cancel</button>
+          </div>
+        </form>
+        """
+
+      _ ->
+        ""
+    end
+  end
 
   defp render_add_immich_form do
     """
