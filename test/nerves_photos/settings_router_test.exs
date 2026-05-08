@@ -454,5 +454,18 @@ defmodule NervesPhotos.SettingsRouterTest do
 
       assert conn.status == 422
     end
+
+    test "preserves existing api_key when not included in update body" do
+      body = Jason.encode!(%{type: "immich", url: "http://new", album_id: "a2"})
+
+      conn =
+        conn(:put, "/settings/photo_sources/0", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+      sources = NervesPhotos.SettingsStore.get(:photo_sources)
+      assert hd(sources)[:api_key] == "k1"
+    end
   end
 end

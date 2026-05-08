@@ -109,12 +109,13 @@ defmodule NervesPhotos.SettingsRouter do
         send_resp(conn, 422, Jason.encode!(%{error: "unknown source type"}))
 
       true ->
-        updated = List.replace_at(sources, idx, source)
+        merged = Map.merge(Enum.at(sources, idx), source)
+        updated = List.replace_at(sources, idx, merged)
         NervesPhotos.SettingsStore.put(:photo_sources, updated)
 
         conn
         |> put_resp_header("content-type", "application/json")
-        |> send_resp(200, Jason.encode!(source))
+        |> send_resp(200, Jason.encode!(merged))
     end
   end
 
