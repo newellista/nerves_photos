@@ -91,9 +91,10 @@ defmodule NervesPhotos.SettingsRouterTest do
 
   describe "GET /current" do
     setup do
-      start_supervised!(
-        {NervesPhotos.SettingsStore, [path: "/tmp/nerves_photos_test_settings.json"]}
-      )
+      path = "/tmp/nerves_photos_test_current_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
 
       start_supervised!(
         {PhotoQueueStub,
@@ -155,11 +156,10 @@ defmodule NervesPhotos.SettingsRouterTest do
 
   describe "GET /settings/photo_sources" do
     setup do
-      start_supervised!(
-        {NervesPhotos.SettingsStore,
-         [path: "/tmp/nerves_photos_test_sources_#{:erlang.unique_integer([:positive])}.json"]}
-      )
-
+      path = "/tmp/nerves_photos_test_sources_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
       :ok
     end
 
@@ -183,11 +183,10 @@ defmodule NervesPhotos.SettingsRouterTest do
 
   describe "POST /settings/photo_sources" do
     setup do
-      start_supervised!(
-        {NervesPhotos.SettingsStore,
-         [path: "/tmp/nerves_photos_test_post_#{:erlang.unique_integer([:positive])}.json"]}
-      )
-
+      path = "/tmp/nerves_photos_test_post_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
       :ok
     end
 
@@ -233,7 +232,9 @@ defmodule NervesPhotos.SettingsRouterTest do
   describe "DELETE /settings/photo_sources/:index" do
     setup do
       path = "/tmp/nerves_photos_test_del_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
       start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
 
       NervesPhotos.SettingsStore.put(:photo_sources, [
         %{type: "immich", url: "http://a", api_key: "k1", album_id: "a1"},
@@ -260,6 +261,248 @@ defmodule NervesPhotos.SettingsRouterTest do
         |> NervesPhotos.SettingsRouter.call(@opts)
 
       assert conn.status == 404
+    end
+
+    test "returns 400 for non-integer index" do
+      conn =
+        conn(:delete, "/settings/photo_sources/abc")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 400
+    end
+  end
+
+  describe "GET /settings sidebar layout" do
+    setup do
+      path = "/tmp/nerves_photos_test_settings_ui_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
+      :ok
+    end
+
+    test "renders sidebar with all four nav items" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      assert conn.status == 200
+      assert conn.resp_body =~ "Display"
+      assert conn.resp_body =~ "WiFi"
+      assert conn.resp_body =~ "Photo Sources"
+      assert conn.resp_body =~ "Users"
+    end
+
+    test "display section is visible by default, others hidden" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(id="section-display")
+      assert body =~ ~s(id="section-wifi" style="display:none")
+      assert body =~ ~s(id="section-sources" style="display:none")
+      assert body =~ ~s(id="section-users" style="display:none")
+    end
+
+    test "display section contains slide interval and weather zip fields" do
+      NervesPhotos.SettingsStore.put(:slide_interval_ms, 60_000)
+      NervesPhotos.SettingsStore.put(:weather_zip, "90210")
+
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(name="slide_interval_ms")
+      assert body =~ ~s(value="60")
+      assert body =~ ~s(name="weather_zip")
+      assert body =~ "90210"
+    end
+
+    test "wifi section contains ssid field and status" do
+      NervesPhotos.SettingsStore.put(:wifi_ssid, "MyNetwork")
+
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(name="wifi_ssid")
+      assert body =~ "MyNetwork"
+      assert body =~ ~s(name="wifi_psk")
+      assert body =~ "Status:"
+    end
+
+    test "page includes section-switching JavaScript" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ "function showSection"
+      assert body =~ "function toggleEdit"
+      assert body =~ "function toggleAddForm"
+      assert body =~ "function deleteSource"
+      assert body =~ "function submitAddForm"
+      assert body =~ "function submitEditForm"
+    end
+
+    test "users section shows coming soon message" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      assert conn.resp_body =~ "Coming soon"
+    end
+  end
+
+  describe "GET /settings photo sources section" do
+    setup do
+      path = "/tmp/nerves_photos_test_sources_ui_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
+      :ok
+    end
+
+    test "shows empty state when no sources configured" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      assert conn.resp_body =~ "No photo sources configured"
+    end
+
+    test "renders one row per configured source" do
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "immich", url: "http://192.168.1.10:2283", api_key: "k", album_id: "a"},
+        %{type: "google_photos", share_url: "https://photos.app.goo.gl/x"}
+      ])
+
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ "Immich"
+      assert body =~ "192.168.1.10"
+      assert body =~ "Google Photos"
+    end
+
+    test "each source row has a delete button targeting the correct index" do
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "immich", url: "http://srv", api_key: "k", album_id: "a"}
+      ])
+
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      assert conn.resp_body =~ ~s[onclick="deleteSource(0)"]
+    end
+
+    test "add immich form contains required fields" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(id="add-immich-form")
+      assert body =~ ~s(placeholder="http://192.168.1.10:2283")
+      assert body =~ ~s(name="api_key")
+      assert body =~ ~s(name="album_id")
+    end
+
+    test "add google photos form contains share_url field" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(id="add-google-form")
+      assert body =~ ~s(name="share_url")
+    end
+
+    test "edit form for immich source pre-fills url and album_id but not api_key" do
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "immich", url: "http://192.168.1.10:2283", api_key: "mykey", album_id: "abc-uuid"}
+      ])
+
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(id="edit-form-0")
+      assert body =~ "http://192.168.1.10:2283"
+      assert body =~ "abc-uuid"
+      refute body =~ ~s(value="mykey")
+    end
+
+    test "edit form for google photos source pre-fills share_url" do
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "google_photos", share_url: "https://photos.app.goo.gl/test123"}
+      ])
+
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(id="edit-form-0")
+      assert body =~ "https://photos.app.goo.gl/test123"
+    end
+  end
+
+  describe "PUT /settings/photo_sources/:index" do
+    setup do
+      path = "/tmp/nerves_photos_test_put_#{:erlang.unique_integer([:positive])}.json"
+      File.rm(path)
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      on_exit(fn -> File.rm(path) end)
+
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "immich", url: "http://a", api_key: "k1", album_id: "a1"},
+        %{type: "google_photos", share_url: "https://photos.app.goo.gl/x"}
+      ])
+
+      :ok
+    end
+
+    test "replaces source at given index" do
+      body = Jason.encode!(%{type: "immich", url: "http://new", api_key: "k2", album_id: "a2"})
+
+      conn =
+        conn(:put, "/settings/photo_sources/0", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+      sources = NervesPhotos.SettingsStore.get(:photo_sources)
+      assert length(sources) == 2
+      assert hd(sources)[:url] == "http://new"
+      assert hd(sources)[:album_id] == "a2"
+    end
+
+    test "returns updated source as JSON" do
+      body = Jason.encode!(%{type: "immich", url: "http://new", api_key: "k2", album_id: "a2"})
+
+      conn =
+        conn(:put, "/settings/photo_sources/0", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+      result = Jason.decode!(conn.resp_body)
+      assert result["url"] == "http://new"
+    end
+
+    test "returns 404 for out-of-bounds index" do
+      body = Jason.encode!(%{type: "immich", url: "http://new", api_key: "k2", album_id: "a2"})
+
+      conn =
+        conn(:put, "/settings/photo_sources/5", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 404
+    end
+
+    test "returns 422 for unknown source type" do
+      body = Jason.encode!(%{type: "dropbox", path: "/photos"})
+
+      conn =
+        conn(:put, "/settings/photo_sources/0", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 422
+    end
+
+    test "preserves existing api_key when not included in update body" do
+      body = Jason.encode!(%{type: "immich", url: "http://new", album_id: "a2"})
+
+      conn =
+        conn(:put, "/settings/photo_sources/0", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+      sources = NervesPhotos.SettingsStore.get(:photo_sources)
+      assert hd(sources)[:api_key] == "k1"
+    end
+
+    test "returns 400 for non-integer index" do
+      body = Jason.encode!(%{type: "immich", url: "http://new", api_key: "k2", album_id: "a2"})
+
+      conn =
+        conn(:put, "/settings/photo_sources/abc", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 400
     end
   end
 end

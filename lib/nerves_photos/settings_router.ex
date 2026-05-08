@@ -7,6 +7,7 @@ defmodule NervesPhotos.SettingsRouter do
   plug(:dispatch)
 
   @valid_source_types ~w(immich google_photos)
+  @source_param_keys ~w(type url api_key album_id share_url)
 
   get "/settings" do
     settings = NervesPhotos.SettingsStore.all()
@@ -16,7 +17,7 @@ defmodule NervesPhotos.SettingsRouter do
         GenServer.call(pid, :mode)
       end
 
-    send_resp(conn, 200, render_form(settings, wifi_mode))
+    send_resp(conn, 200, render_page(settings, wifi_mode))
   end
 
   post "/settings" do
@@ -66,7 +67,7 @@ defmodule NervesPhotos.SettingsRouter do
   end
 
   post "/settings/photo_sources" do
-    source = for {k, v} <- conn.body_params, into: %{}, do: {String.to_atom(k), v}
+    source = atomize_source_params(conn.body_params)
 
     if source[:type] in @valid_source_types do
       current = NervesPhotos.SettingsStore.get(:photo_sources) || []
@@ -82,17 +83,47 @@ defmodule NervesPhotos.SettingsRouter do
 
   delete "/settings/photo_sources/:index" do
     sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
-    idx = String.to_integer(conn.params["index"])
 
-    if idx >= 0 and idx < length(sources) do
-      updated = List.delete_at(sources, idx)
-      NervesPhotos.SettingsStore.put(:photo_sources, updated)
+    case Integer.parse(conn.params["index"]) do
+      {idx, ""} when idx >= 0 and idx < length(sources) ->
+        updated = List.delete_at(sources, idx)
+        NervesPhotos.SettingsStore.put(:photo_sources, updated)
 
-      conn
-      |> put_resp_header("content-type", "application/json")
-      |> send_resp(200, Jason.encode!(updated))
-    else
-      send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
+        conn
+        |> put_resp_header("content-type", "application/json")
+        |> send_resp(200, Jason.encode!(updated))
+
+      {idx, ""} when idx >= 0 ->
+        send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
+
+      _ ->
+        send_resp(conn, 400, Jason.encode!(%{error: "invalid index"}))
+    end
+  end
+
+  put "/settings/photo_sources/:index" do
+    sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
+    source = atomize_source_params(conn.body_params)
+
+    case Integer.parse(conn.params["index"]) do
+      {idx, ""} when idx >= 0 and idx < length(sources) ->
+        if source[:type] in @valid_source_types do
+          merged = Map.merge(Enum.at(sources, idx), source)
+          updated = List.replace_at(sources, idx, merged)
+          NervesPhotos.SettingsStore.put(:photo_sources, updated)
+
+          conn
+          |> put_resp_header("content-type", "application/json")
+          |> send_resp(200, Jason.encode!(merged))
+        else
+          send_resp(conn, 422, Jason.encode!(%{error: "unknown source type"}))
+        end
+
+      {idx, ""} when idx >= 0 ->
+        send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
+
+      _ ->
+        send_resp(conn, 400, Jason.encode!(%{error: "invalid index"}))
     end
   end
 
@@ -296,57 +327,378 @@ defmodule NervesPhotos.SettingsRouter do
     end
   end
 
-  defp render_form(s, wifi_mode) do
-    interval_s = div(Map.get(s, :slide_interval_ms, 30_000), 1_000)
-    wifi_banner = wifi_banner(wifi_mode)
-
+  defp render_page(s, wifi_mode) do
     """
     <!DOCTYPE html>
     <html>
-    <head><title>NervesPhotos Settings</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-      body { font-family: sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; }
-      label { display: block; margin-top: 16px; font-size: 14px; color: #555; }
-      input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; font-size: 16px; }
-      button { margin-top: 24px; width: 100%; padding: 12px; background: #2563eb; color: white;
-               border: none; font-size: 16px; cursor: pointer; }
-      h2 { margin-top: 32px; font-size: 16px; color: #888; text-transform: uppercase; }
-      .banner { padding: 12px; border-radius: 4px; margin-bottom: 16px; font-size: 14px; }
-      .banner-warn { background: #fef3c7; color: #92400e; }
-      .banner-info { background: #dbeafe; color: #1e40af; }
-      .banner-ok   { background: #d1fae5; color: #065f46; }
-    </style>
+    <head>
+      <title>NervesPhotos Settings</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: sans-serif; background: #f8f9fa; min-height: 100vh; }
+        .page { display: flex; min-height: 100vh; }
+        .sidebar { width: 200px; background: #1e293b; flex-shrink: 0; padding-top: 24px; }
+        .sidebar-title { color: #64748b; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; padding: 0 20px 12px; }
+        .nav-item { display: block; padding: 10px 20px; color: #94a3b8; cursor: pointer; font-size: 14px; border-left: 3px solid transparent; }
+        .nav-item.active { color: #e2e8f0; background: #334155; border-left-color: #3b82f6; }
+        .nav-item.disabled { color: #475569; cursor: default; }
+        .nav-soon { font-size: 11px; color: #475569; margin-left: 4px; }
+        .content { flex: 1; padding: 32px; max-width: 520px; }
+        .section-title { font-size: 18px; font-weight: 600; color: #1e293b; margin-bottom: 24px; }
+        label { display: block; margin-top: 16px; font-size: 13px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+        input[type=text], input[type=number], input[type=password] { width: 100%; padding: 8px 10px; margin-top: 4px; box-sizing: border-box; font-size: 15px; border: 1px solid #cbd5e1; border-radius: 4px; }
+        .btn-primary { padding: 9px 20px; background: #3b82f6; color: white; border: none; font-size: 14px; border-radius: 4px; cursor: pointer; }
+        .btn-secondary { padding: 7px 14px; background: #e2e8f0; color: #475569; border: none; font-size: 13px; border-radius: 4px; cursor: pointer; }
+        .btn-danger { padding: 7px 10px; background: transparent; color: #ef4444; border: 1px solid #fecaca; font-size: 12px; border-radius: 4px; cursor: pointer; }
+        .banner { padding: 12px; border-radius: 4px; margin-bottom: 16px; font-size: 14px; }
+        .banner-warn { background: #fef3c7; color: #92400e; }
+        .banner-info { background: #dbeafe; color: #1e40af; }
+        .banner-ok   { background: #d1fae5; color: #065f46; }
+        .source-row { background: white; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 8px; }
+        .source-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; }
+        .source-type { font-size: 13px; font-weight: 600; }
+        .source-type-immich { color: #3b82f6; }
+        .source-type-google { color: #10b981; }
+        .source-desc { font-size: 12px; color: #94a3b8; margin-left: 8px; }
+        .source-actions { display: flex; gap: 8px; }
+        .inline-form { border-top: 1px solid #e2e8f0; padding: 14px; }
+        .add-source-btn { display: block; width: 100%; padding: 10px; margin-top: 8px; background: white; border: 1px dashed #cbd5e1; border-radius: 6px; color: #64748b; font-size: 13px; text-align: center; cursor: pointer; }
+        .add-source-btn:hover { background: #f1f5f9; }
+        .wifi-status { font-size: 13px; color: #64748b; margin-top: 8px; }
+      </style>
     </head>
     <body>
-    <h1>NervesPhotos Settings</h1>
-    #{wifi_banner}
-    <form method="POST" action="/settings">
-      <h2>Photo Sources</h2>
-      <p style="font-size:14px;color:#555;margin-top:8px">
-        Manage photo sources via the API:<br>
-        <code>GET/POST /settings/photo_sources</code><br>
-        <code>DELETE /settings/photo_sources/:index</code>
-      </p>
-      <h2>Weather</h2>
-      <label>ZIP Code (leave blank to use IP location)
-        <input name="weather_zip" value="#{Map.get(s, :weather_zip) || ""}">
-      </label>
-      <h2>Display</h2>
-      <label>Slide interval (seconds)
-        <input name="slide_interval_ms" type="number" min="5" value="#{interval_s}">
-      </label>
-      <h2>WiFi</h2>
-      <label>SSID
-        <input name="wifi_ssid" value="#{Map.get(s, :wifi_ssid) || ""}">
-      </label>
-      <label>Password
-        <input name="wifi_psk" type="password">
-      </label>
-      <button type="submit">Save</button>
-    </form>
+    <div class="page">
+      #{render_sidebar("display")}
+      <div class="content">
+        #{wifi_banner(wifi_mode)}
+        <div id="section-display">#{render_display_section(s)}</div>
+        <div id="section-wifi" style="display:none">#{render_wifi_section(s, wifi_mode)}</div>
+        <div id="section-sources" style="display:none">#{render_sources_section(s)}</div>
+        <div id="section-users" style="display:none">#{render_users_placeholder()}</div>
+      </div>
+    </div>
+    #{render_settings_js()}
     </body>
     </html>
     """
+  end
+
+  defp render_sidebar(active) do
+    items = [
+      {"display", "Display"},
+      {"wifi", "WiFi"},
+      {"sources", "Photo Sources"}
+    ]
+
+    nav_links =
+      Enum.map_join(items, "\n", fn {id, label} ->
+        class = if id == active, do: "nav-item active", else: "nav-item"
+        "<a class=\"#{class}\" onclick=\"showSection('#{id}')\">#{label}</a>"
+      end)
+
+    """
+    <div class="sidebar">
+      <div class="sidebar-title">Settings</div>
+      #{nav_links}
+      <a class="nav-item disabled">Users <span class="nav-soon">(soon)</span></a>
+    </div>
+    """
+  end
+
+  defp render_display_section(s) do
+    interval_s = div(Map.get(s, :slide_interval_ms, 30_000), 1_000)
+    zip = Plug.HTML.html_escape(Map.get(s, :weather_zip) || "")
+
+    """
+    <div class="section-title">Display</div>
+    <form method="POST" action="/settings">
+      <label>Slide Interval (seconds)
+        <input type="number" name="slide_interval_ms" min="5" value="#{interval_s}">
+      </label>
+      <label>Weather ZIP Code
+        <input type="text" name="weather_zip" value="#{zip}" placeholder="Leave blank for IP location">
+      </label>
+      <button type="submit" class="btn-primary" style="margin-top:24px">Save</button>
+    </form>
+    """
+  end
+
+  defp render_wifi_section(s, wifi_mode) do
+    ssid = Plug.HTML.html_escape(Map.get(s, :wifi_ssid) || "")
+
+    status_text =
+      case wifi_mode do
+        :client -> "Connected"
+        :connecting -> "Connecting..."
+        :ap -> "Access Point (setup mode)"
+        _ -> "Unknown"
+      end
+
+    """
+    <div class="section-title">WiFi</div>
+    <form method="POST" action="/settings">
+      <label>Network Name (SSID)
+        <input type="text" name="wifi_ssid" value="#{ssid}">
+      </label>
+      <label>Password
+        <input type="password" name="wifi_psk" placeholder="Leave blank to keep current">
+      </label>
+      <div class="wifi-status">Status: #{Plug.HTML.html_escape(status_text)}</div>
+      <button type="submit" class="btn-primary" style="margin-top:24px">Save</button>
+    </form>
+    """
+  end
+
+  defp render_sources_section(s) do
+    sources = Map.get(s, :photo_sources) || []
+
+    source_rows =
+      sources
+      |> Enum.with_index()
+      |> Enum.map_join("\n", fn {source, idx} ->
+        {type_label, type_class, desc} =
+          case source[:type] do
+            "immich" ->
+              host = URI.parse(source[:url] || "").host || source[:url] || ""
+              {"Immich", "source-type-immich", Plug.HTML.html_escape(host)}
+
+            "google_photos" ->
+              {"Google Photos", "source-type-google", "Shared album"}
+
+            other ->
+              {Plug.HTML.html_escape(other || ""), "", ""}
+          end
+
+        """
+        <div class="source-row" id="source-row-#{idx}">
+          <div class="source-header">
+            <div>
+              <span class="source-type #{type_class}">#{type_label}</span>
+              <span class="source-desc">#{desc}</span>
+            </div>
+            <div class="source-actions">
+              <button class="btn-secondary" type="button" onclick="toggleEdit(#{idx})">Edit</button>
+              <button class="btn-danger" type="button" onclick="deleteSource(#{idx})">Delete</button>
+            </div>
+          </div>
+          <div id="edit-form-#{idx}" style="display:none" class="inline-form">
+            #{render_edit_form(source, idx)}
+          </div>
+        </div>
+        """
+      end)
+
+    empty_msg =
+      if sources == [],
+        do: ~s(<p style="color:#94a3b8;font-size:14px">No photo sources configured yet.</p>),
+        else: ""
+
+    """
+    <div class="section-title">Photo Sources</div>
+    #{empty_msg}
+    #{source_rows}
+    <div id="add-immich-btn" class="add-source-btn" onclick="toggleAddForm('immich')">+ Add Immich Album</div>
+    <div id="add-google-btn" class="add-source-btn" onclick="toggleAddForm('google')">+ Add Google Photos Album</div>
+    <div id="add-immich-form" style="display:none" class="source-row">
+      <div class="inline-form">
+        #{render_add_immich_form()}
+      </div>
+    </div>
+    <div id="add-google-form" style="display:none" class="source-row">
+      <div class="inline-form">
+        #{render_add_google_form()}
+      </div>
+    </div>
+    """
+  end
+
+  defp render_edit_form(source, idx) do
+    case source[:type] do
+      "immich" ->
+        url = Plug.HTML.html_escape(source[:url] || "")
+        album_id = Plug.HTML.html_escape(source[:album_id] || "")
+
+        """
+        <div style="font-size:13px;font-weight:600;color:#3b82f6;margin-bottom:12px">Edit Immich Album</div>
+        <form onsubmit="submitEditForm(event, #{idx})">
+          <input type="hidden" name="type" value="immich">
+          <label>Server URL
+            <input type="text" name="url" value="#{url}">
+          </label>
+          <label>API Key
+            <input type="text" name="api_key" placeholder="Leave blank to keep current">
+          </label>
+          <label>Album ID
+            <input type="text" name="album_id" value="#{album_id}">
+          </label>
+          <div style="display:flex;gap:8px;margin-top:16px">
+            <button type="submit" class="btn-primary">Save</button>
+            <button type="button" class="btn-secondary" onclick="toggleEdit(#{idx})">Cancel</button>
+          </div>
+        </form>
+        """
+
+      "google_photos" ->
+        share_url = Plug.HTML.html_escape(source[:share_url] || "")
+
+        """
+        <div style="font-size:13px;font-weight:600;color:#10b981;margin-bottom:12px">Edit Google Photos Album</div>
+        <form onsubmit="submitEditForm(event, #{idx})">
+          <input type="hidden" name="type" value="google_photos">
+          <label>Share URL
+            <input type="text" name="share_url" value="#{share_url}">
+          </label>
+          <div style="display:flex;gap:8px;margin-top:16px">
+            <button type="submit" class="btn-primary">Save</button>
+            <button type="button" class="btn-secondary" onclick="toggleEdit(#{idx})">Cancel</button>
+          </div>
+        </form>
+        """
+
+      _ ->
+        ""
+    end
+  end
+
+  defp render_add_immich_form do
+    """
+    <div style="font-size:13px;font-weight:600;color:#3b82f6;margin-bottom:12px">Add Immich Album</div>
+    <form onsubmit="submitAddForm(event)">
+      <input type="hidden" name="type" value="immich">
+      <label>Server URL
+        <input type="text" name="url" placeholder="http://192.168.1.10:2283">
+      </label>
+      <label>API Key
+        <input type="text" name="api_key" placeholder="Your Immich API key">
+      </label>
+      <label>Album ID
+        <input type="text" name="album_id" placeholder="Album UUID">
+      </label>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" class="btn-secondary" onclick="toggleAddForm('immich')">Cancel</button>
+      </div>
+    </form>
+    """
+  end
+
+  defp render_add_google_form do
+    """
+    <div style="font-size:13px;font-weight:600;color:#10b981;margin-bottom:12px">Add Google Photos Album</div>
+    <form onsubmit="submitAddForm(event)">
+      <input type="hidden" name="type" value="google_photos">
+      <label>Share URL
+        <input type="text" name="share_url" placeholder="https://photos.app.goo.gl/...">
+      </label>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" class="btn-secondary" onclick="toggleAddForm('google')">Cancel</button>
+      </div>
+    </form>
+    """
+  end
+
+  defp render_users_placeholder do
+    """
+    <div class="section-title" style="color:#94a3b8">Users</div>
+    <p style="color:#94a3b8;font-size:14px">Coming soon. User management will be added in a future release.</p>
+    """
+  end
+
+  defp render_settings_js do
+    """
+    <script>
+    var SECTIONS = ['display','wifi','sources','users'];
+
+    function showSection(id) {
+      SECTIONS.forEach(function(s) {
+        var el = document.getElementById('section-' + s);
+        if (el) el.style.display = s === id ? 'block' : 'none';
+      });
+      document.querySelectorAll('.nav-item').forEach(function(el) {
+        el.classList.remove('active');
+      });
+      var active = document.querySelector('[onclick="showSection(\\'' + id + '\\')"]');
+      if (active) active.classList.add('active');
+    }
+
+    function toggleEdit(idx) {
+      var form = document.getElementById('edit-form-' + idx);
+      if (!form) return;
+      var isOpen = form.style.display !== 'none';
+      closeAllForms();
+      if (!isOpen) form.style.display = 'block';
+    }
+
+    function toggleAddForm(type) {
+      var id = type === 'immich' ? 'add-immich-form' : 'add-google-form';
+      var form = document.getElementById(id);
+      if (!form) return;
+      var isOpen = form.style.display !== 'none';
+      closeAllForms();
+      if (!isOpen) form.style.display = 'block';
+    }
+
+    function closeAllForms() {
+      document.querySelectorAll('[id^="edit-form-"]').forEach(function(el) {
+        el.style.display = 'none';
+      });
+      ['add-immich-form','add-google-form'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+    }
+
+    function deleteSource(idx) {
+      if (!confirm('Delete this photo source?')) return;
+      fetch('/settings/photo_sources/' + idx, {method: 'DELETE'})
+        .then(function(r) {
+          if (r.ok) { location.reload(); }
+          else { r.json().then(function(e) { alert(e.error || 'Delete failed'); }); }
+        })
+        .catch(function() { alert('Network error. Please try again.'); });
+    }
+
+    function submitAddForm(event) {
+      event.preventDefault();
+      var form = event.target;
+      var data = {};
+      new FormData(form).forEach(function(v, k) { data[k] = v; });
+      fetch('/settings/photo_sources', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      }).then(function(r) {
+        if (r.ok) { location.reload(); }
+        else { r.json().then(function(e) { alert(e.error || 'Save failed'); }); }
+      }).catch(function() { alert('Network error. Please try again.'); });
+    }
+
+    function submitEditForm(event, idx) {
+      event.preventDefault();
+      var form = event.target;
+      var data = {};
+      new FormData(form).forEach(function(v, k) { if (v !== '') data[k] = v; });
+      fetch('/settings/photo_sources/' + idx, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      }).then(function(r) {
+        if (r.ok) { location.reload(); }
+        else { r.json().then(function(e) { alert(e.error || 'Save failed'); }); }
+      }).catch(function() { alert('Network error. Please try again.'); });
+    }
+    </script>
+    """
+  end
+
+  defp atomize_source_params(params) do
+    for k <- @source_param_keys,
+        v = params[k],
+        v != nil,
+        into: %{},
+        do: {String.to_existing_atom(k), v}
   end
 end
