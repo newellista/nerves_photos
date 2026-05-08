@@ -16,7 +16,7 @@ defmodule NervesPhotos.SettingsRouter do
         GenServer.call(pid, :mode)
       end
 
-    send_resp(conn, 200, render_form(settings, wifi_mode))
+    send_resp(conn, 200, render_page(settings, wifi_mode))
   end
 
   post "/settings" do
@@ -318,57 +318,89 @@ defmodule NervesPhotos.SettingsRouter do
     end
   end
 
-  defp render_form(s, wifi_mode) do
-    interval_s = div(Map.get(s, :slide_interval_ms, 30_000), 1_000)
-    wifi_banner = wifi_banner(wifi_mode)
-
+  defp render_page(s, wifi_mode) do
     """
     <!DOCTYPE html>
     <html>
-    <head><title>NervesPhotos Settings</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-      body { font-family: sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; }
-      label { display: block; margin-top: 16px; font-size: 14px; color: #555; }
-      input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; font-size: 16px; }
-      button { margin-top: 24px; width: 100%; padding: 12px; background: #2563eb; color: white;
-               border: none; font-size: 16px; cursor: pointer; }
-      h2 { margin-top: 32px; font-size: 16px; color: #888; text-transform: uppercase; }
-      .banner { padding: 12px; border-radius: 4px; margin-bottom: 16px; font-size: 14px; }
-      .banner-warn { background: #fef3c7; color: #92400e; }
-      .banner-info { background: #dbeafe; color: #1e40af; }
-      .banner-ok   { background: #d1fae5; color: #065f46; }
-    </style>
+    <head>
+      <title>NervesPhotos Settings</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: sans-serif; background: #f8f9fa; min-height: 100vh; }
+        .page { display: flex; min-height: 100vh; }
+        .sidebar { width: 200px; background: #1e293b; flex-shrink: 0; padding-top: 24px; }
+        .sidebar-title { color: #64748b; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; padding: 0 20px 12px; }
+        .nav-item { display: block; padding: 10px 20px; color: #94a3b8; cursor: pointer; font-size: 14px; border-left: 3px solid transparent; }
+        .nav-item.active { color: #e2e8f0; background: #334155; border-left-color: #3b82f6; }
+        .nav-item.disabled { color: #475569; cursor: default; }
+        .nav-soon { font-size: 11px; color: #475569; margin-left: 4px; }
+        .content { flex: 1; padding: 32px; max-width: 520px; }
+        .section-title { font-size: 18px; font-weight: 600; color: #1e293b; margin-bottom: 24px; }
+        label { display: block; margin-top: 16px; font-size: 13px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+        input[type=text], input[type=number], input[type=password] { width: 100%; padding: 8px 10px; margin-top: 4px; box-sizing: border-box; font-size: 15px; border: 1px solid #cbd5e1; border-radius: 4px; }
+        .btn-primary { margin-top: 24px; padding: 9px 20px; background: #3b82f6; color: white; border: none; font-size: 14px; border-radius: 4px; cursor: pointer; }
+        .btn-secondary { padding: 7px 14px; background: #e2e8f0; color: #475569; border: none; font-size: 13px; border-radius: 4px; cursor: pointer; }
+        .btn-danger { padding: 7px 10px; background: transparent; color: #ef4444; border: 1px solid #fecaca; font-size: 12px; border-radius: 4px; cursor: pointer; }
+        .banner { padding: 12px; border-radius: 4px; margin-bottom: 16px; font-size: 14px; }
+        .banner-warn { background: #fef3c7; color: #92400e; }
+        .banner-info { background: #dbeafe; color: #1e40af; }
+        .banner-ok   { background: #d1fae5; color: #065f46; }
+        .source-row { background: white; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 8px; }
+        .source-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; }
+        .source-type { font-size: 13px; font-weight: 600; }
+        .source-type-immich { color: #3b82f6; }
+        .source-type-google { color: #10b981; }
+        .source-desc { font-size: 12px; color: #94a3b8; margin-left: 8px; }
+        .source-actions { display: flex; gap: 8px; }
+        .inline-form { border-top: 1px solid #e2e8f0; padding: 14px; }
+        .add-source-btn { display: block; width: 100%; padding: 10px; margin-top: 8px; background: white; border: 1px dashed #cbd5e1; border-radius: 6px; color: #64748b; font-size: 13px; text-align: center; cursor: pointer; }
+        .add-source-btn:hover { background: #f1f5f9; }
+        .wifi-status { font-size: 13px; color: #64748b; margin-top: 8px; }
+      </style>
     </head>
     <body>
-    <h1>NervesPhotos Settings</h1>
-    #{wifi_banner}
-    <form method="POST" action="/settings">
-      <h2>Photo Sources</h2>
-      <p style="font-size:14px;color:#555;margin-top:8px">
-        Manage photo sources via the API:<br>
-        <code>GET/POST /settings/photo_sources</code><br>
-        <code>DELETE /settings/photo_sources/:index</code>
-      </p>
-      <h2>Weather</h2>
-      <label>ZIP Code (leave blank to use IP location)
-        <input name="weather_zip" value="#{Map.get(s, :weather_zip) || ""}">
-      </label>
-      <h2>Display</h2>
-      <label>Slide interval (seconds)
-        <input name="slide_interval_ms" type="number" min="5" value="#{interval_s}">
-      </label>
-      <h2>WiFi</h2>
-      <label>SSID
-        <input name="wifi_ssid" value="#{Map.get(s, :wifi_ssid) || ""}">
-      </label>
-      <label>Password
-        <input name="wifi_psk" type="password">
-      </label>
-      <button type="submit">Save</button>
-    </form>
+    <div class="page">
+      #{render_sidebar("display")}
+      <div class="content">
+        #{wifi_banner(wifi_mode)}
+        <div id="section-display">#{render_display_section(s)}</div>
+        <div id="section-wifi" style="display:none">#{render_wifi_section(s, wifi_mode)}</div>
+        <div id="section-sources" style="display:none">#{render_sources_section(s)}</div>
+        <div id="section-users" style="display:none">#{render_users_placeholder()}</div>
+      </div>
+    </div>
+    #{render_settings_js()}
     </body>
     </html>
     """
   end
+
+  defp render_sidebar(active) do
+    items = [
+      {"display", "Display"},
+      {"wifi", "WiFi"},
+      {"sources", "Photo Sources"}
+    ]
+
+    nav_links =
+      Enum.map_join(items, "\n", fn {id, label} ->
+        class = if id == active, do: "nav-item active", else: "nav-item"
+        "<a class=\"#{class}\" onclick=\"showSection('#{id}')\">#{label}</a>"
+      end)
+
+    """
+    <div class="sidebar">
+      <div class="sidebar-title">Settings</div>
+      #{nav_links}
+      <a class="nav-item disabled">Users <span class="nav-soon">(soon)</span></a>
+    </div>
+    """
+  end
+
+  defp render_display_section(_s), do: ""
+  defp render_wifi_section(_s, _wifi_mode), do: ""
+  defp render_sources_section(_s), do: ""
+  defp render_users_placeholder, do: ""
+  defp render_settings_js, do: ""
 end

@@ -263,6 +263,32 @@ defmodule NervesPhotos.SettingsRouterTest do
     end
   end
 
+  describe "GET /settings sidebar layout" do
+    setup do
+      path = "/tmp/nerves_photos_test_settings_ui_#{:erlang.unique_integer([:positive])}.json"
+      start_supervised!({NervesPhotos.SettingsStore, [path: path]})
+      :ok
+    end
+
+    test "renders sidebar with all four nav items" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      assert conn.status == 200
+      assert conn.resp_body =~ "Display"
+      assert conn.resp_body =~ "WiFi"
+      assert conn.resp_body =~ "Photo Sources"
+      assert conn.resp_body =~ "Users"
+    end
+
+    test "display section is visible by default, others hidden" do
+      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      body = conn.resp_body
+      assert body =~ ~s(id="section-display")
+      assert body =~ ~s(id="section-wifi" style="display:none")
+      assert body =~ ~s(id="section-sources" style="display:none")
+      assert body =~ ~s(id="section-users" style="display:none")
+    end
+  end
+
   describe "PUT /settings/photo_sources/:index" do
     setup do
       path = "/tmp/nerves_photos_test_put_#{:erlang.unique_integer([:positive])}.json"
