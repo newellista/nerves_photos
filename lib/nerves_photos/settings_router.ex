@@ -565,7 +565,7 @@ defmodule NervesPhotos.SettingsRouter do
   defp render_add_immich_form do
     """
     <div style="font-size:13px;font-weight:600;color:#3b82f6;margin-bottom:12px">Add Immich Album</div>
-    <form onsubmit="submitAddForm(event, 'immich')">
+    <form onsubmit="submitAddForm(event)">
       <input type="hidden" name="type" value="immich">
       <label>Server URL
         <input type="text" name="url" placeholder="http://192.168.1.10:2283">
@@ -587,7 +587,7 @@ defmodule NervesPhotos.SettingsRouter do
   defp render_add_google_form do
     """
     <div style="font-size:13px;font-weight:600;color:#10b981;margin-bottom:12px">Add Google Photos Album</div>
-    <form onsubmit="submitAddForm(event, 'google')">
+    <form onsubmit="submitAddForm(event)">
       <input type="hidden" name="type" value="google_photos">
       <label>Share URL
         <input type="text" name="share_url" placeholder="https://photos.app.goo.gl/...">
@@ -647,11 +647,16 @@ defmodule NervesPhotos.SettingsRouter do
     }
 
     function deleteSource(idx) {
+      if (!confirm('Delete this photo source?')) return;
       fetch('/settings/photo_sources/' + idx, {method: 'DELETE'})
-        .then(function() { location.reload(); });
+        .then(function(r) {
+          if (r.ok) { location.reload(); }
+          else { r.json().then(function(e) { alert(e.error || 'Delete failed'); }); }
+        })
+        .catch(function() { alert('Network error. Please try again.'); });
     }
 
-    function submitAddForm(event, type) {
+    function submitAddForm(event) {
       event.preventDefault();
       var form = event.target;
       var data = {};
@@ -663,7 +668,7 @@ defmodule NervesPhotos.SettingsRouter do
       }).then(function(r) {
         if (r.ok) { location.reload(); }
         else { r.json().then(function(e) { alert(e.error || 'Save failed'); }); }
-      });
+      }).catch(function() { alert('Network error. Please try again.'); });
     }
 
     function submitEditForm(event, idx) {
@@ -678,7 +683,7 @@ defmodule NervesPhotos.SettingsRouter do
       }).then(function(r) {
         if (r.ok) { location.reload(); }
         else { r.json().then(function(e) { alert(e.error || 'Save failed'); }); }
-      });
+      }).catch(function() { alert('Network error. Please try again.'); });
     }
     </script>
     """
