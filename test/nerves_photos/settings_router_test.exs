@@ -366,7 +366,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       assert body =~ ~s(name="share_url")
     end
 
-    test "edit form for immich source pre-fills all fields" do
+    test "edit form for immich source pre-fills url and album_id but not api_key" do
       NervesPhotos.SettingsStore.put(:photo_sources, [
         %{type: "immich", url: "http://192.168.1.10:2283", api_key: "mykey", album_id: "abc-uuid"}
       ])
@@ -376,6 +376,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       assert body =~ ~s(id="edit-form-0")
       assert body =~ "http://192.168.1.10:2283"
       assert body =~ "abc-uuid"
+      refute body =~ ~s(value="mykey")
     end
 
     test "edit form for google photos source pre-fills share_url" do
