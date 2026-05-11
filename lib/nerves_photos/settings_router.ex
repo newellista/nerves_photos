@@ -21,6 +21,67 @@ defmodule NervesPhotos.SettingsRouter do
   @valid_source_types ~w(immich google_photos)
   @source_param_keys ~w(type url api_key album_id share_url)
 
+  get "/login" do
+    users = NervesPhotos.UserStore.all()
+    send_resp(conn, 200, render_login(users == [], nil))
+  end
+
+  post "/login" do
+    params = conn.body_params
+    username = params["username"] || ""
+    password = params["password"] || ""
+    users = NervesPhotos.UserStore.all()
+
+    if users == [] do
+      password_confirm = params["password_confirm"] || ""
+
+      cond do
+        password != password_confirm ->
+          send_resp(conn, 200, render_login(true, "Passwords do not match"))
+
+        true ->
+          case NervesPhotos.User.new(username, password, "admin") do
+            {:ok, user} ->
+              NervesPhotos.UserStore.put(username, user)
+
+              conn
+              |> put_session("current_user", %{username: username, role: :admin})
+              |> configure_session(renew: true)
+              |> put_resp_header("location", "/settings")
+              |> send_resp(302, "")
+
+            {:error, reason} ->
+              send_resp(conn, 200, render_login(true, reason))
+          end
+      end
+    else
+      case NervesPhotos.UserStore.get(username) do
+        nil ->
+          send_resp(conn, 200, render_login(false, "Invalid username or password"))
+
+        user ->
+          if NervesPhotos.User.verify_password(user, password) do
+            role = String.to_existing_atom(user.role)
+
+            conn
+            |> put_session("current_user", %{username: username, role: role})
+            |> configure_session(renew: true)
+            |> put_resp_header("location", "/settings")
+            |> send_resp(302, "")
+          else
+            send_resp(conn, 200, render_login(false, "Invalid username or password"))
+          end
+      end
+    end
+  end
+
+  post "/logout" do
+    conn
+    |> configure_session(drop: true)
+    |> put_resp_header("location", "/login")
+    |> send_resp(302, "")
+  end
+
   get "/settings" do
     settings = NervesPhotos.SettingsStore.all()
 
@@ -609,6 +670,73 @@ defmodule NervesPhotos.SettingsRouter do
         <button type="button" class="btn-secondary" onclick="toggleAddForm('google')">Cancel</button>
       </div>
     </form>
+    """
+  end
+
+  defp render_login(bootstrap?, error) do
+    csrf = Plug.CSRFProtection.get_csrf_token()
+    title = if bootstrap?, do: "Create First Admin Account", else: "Sign In"
+
+    error_html =
+      if error,
+        do: ~s(<div class="error">#{Plug.HTML.html_escape(error)}</div>),
+        else: ""
+
+    password_confirm_html =
+      if bootstrap? do
+        """
+        <label>Confirm Password
+          <input type="password" name="password_confirm" autocomplete="new-password">
+        </label>
+        """
+      else
+        ""
+      end
+
+    btn_label = if bootstrap?, do: "Create Account", else: "Sign In"
+
+    """
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>NervesPhotos &mdash; #{title}</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: sans-serif; display: flex; align-items: center;
+               justify-content: center; min-height: 100vh; background: #f8f9fa; }
+        .card { background: white; padding: 32px; border-radius: 8px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.12); width: 320px; }
+        h1 { font-size: 18px; color: #1e293b; margin-bottom: 20px; }
+        label { display: block; margin-top: 16px; font-size: 13px; color: #64748b;
+                text-transform: uppercase; letter-spacing: 0.5px; }
+        input { width: 100%; padding: 8px 10px; margin-top: 4px; font-size: 15px;
+                border: 1px solid #cbd5e1; border-radius: 4px; }
+        button { margin-top: 24px; width: 100%; padding: 10px;
+                 background: #3b82f6; color: white; border: none;
+                 font-size: 15px; border-radius: 4px; cursor: pointer; }
+        .error { background: #fef2f2; color: #b91c1c; padding: 10px;
+                 border-radius: 4px; font-size: 13px; margin-bottom: 8px; }
+      </style>
+    </head>
+    <body>
+    <div class="card">
+      <h1>#{title}</h1>
+      #{error_html}
+      <form method="POST" action="/login">
+        <input type="hidden" name="_csrf_token" value="#{csrf}">
+        <label>Username
+          <input type="text" name="username" autocomplete="username">
+        </label>
+        <label>Password
+          <input type="password" name="password" autocomplete="#{if bootstrap?, do: "new-password", else: "current-password"}">
+        </label>
+        #{password_confirm_html}
+        <button type="submit">#{btn_label}</button>
+      </form>
+    </div>
+    </body>
+    </html>
     """
   end
 

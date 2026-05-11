@@ -472,6 +472,118 @@ defmodule NervesPhotos.SettingsRouterTest do
     end
   end
 
+  describe "login and logout" do
+    setup do
+      path =
+        System.tmp_dir!()
+        |> Path.join("nerves_photos_users_login_#{:erlang.unique_integer([:positive])}.json")
+
+      start_supervised!({NervesPhotos.UserStore, path: path})
+      :ok
+    end
+
+    test "GET /login shows bootstrap form when no users exist" do
+      conn = authed_conn(:get, "/login") |> NervesPhotos.SettingsRouter.call(@opts)
+      assert conn.status == 200
+      assert conn.resp_body =~ "Create First Admin Account"
+      assert conn.resp_body =~ "password_confirm"
+    end
+
+    test "GET /login shows sign-in form when users exist" do
+      {:ok, user} = NervesPhotos.User.new("admin", "password123", "admin")
+      NervesPhotos.UserStore.put("admin", user)
+
+      conn = authed_conn(:get, "/login") |> NervesPhotos.SettingsRouter.call(@opts)
+      assert conn.status == 200
+      assert conn.resp_body =~ "Sign In"
+      refute conn.resp_body =~ "password_confirm"
+    end
+
+    test "POST /login in bootstrap mode creates first admin and redirects" do
+      conn =
+        conn(:post, "/login", "username=admin&password=secret123&password_confirm=secret123")
+        |> put_req_header("content-type", "application/x-www-form-urlencoded")
+        |> put_in(
+          [Access.key(:secret_key_base)],
+          Application.get_env(:nerves_photos, :secret_key_base)
+        )
+        |> Plug.Session.call(@session_opts)
+        |> Plug.Conn.fetch_session()
+        |> Plug.Conn.put_private(:plug_skip_csrf_protection, true)
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 302
+      assert get_resp_header(conn, "location") == ["/settings"]
+      assert NervesPhotos.UserStore.get("admin") != nil
+    end
+
+    test "POST /login bootstrap shows error when passwords do not match" do
+      conn =
+        conn(:post, "/login", "username=admin&password=secret123&password_confirm=different")
+        |> put_req_header("content-type", "application/x-www-form-urlencoded")
+        |> put_in(
+          [Access.key(:secret_key_base)],
+          Application.get_env(:nerves_photos, :secret_key_base)
+        )
+        |> Plug.Session.call(@session_opts)
+        |> Plug.Conn.fetch_session()
+        |> Plug.Conn.put_private(:plug_skip_csrf_protection, true)
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+      assert conn.resp_body =~ "Passwords do not match"
+    end
+
+    test "POST /login with correct credentials redirects to /settings" do
+      {:ok, user} = NervesPhotos.User.new("alice", "password123", "admin")
+      NervesPhotos.UserStore.put("alice", user)
+
+      conn =
+        conn(:post, "/login", "username=alice&password=password123")
+        |> put_req_header("content-type", "application/x-www-form-urlencoded")
+        |> put_in(
+          [Access.key(:secret_key_base)],
+          Application.get_env(:nerves_photos, :secret_key_base)
+        )
+        |> Plug.Session.call(@session_opts)
+        |> Plug.Conn.fetch_session()
+        |> Plug.Conn.put_private(:plug_skip_csrf_protection, true)
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 302
+      assert get_resp_header(conn, "location") == ["/settings"]
+    end
+
+    test "POST /login with wrong password re-renders form with error" do
+      {:ok, user} = NervesPhotos.User.new("alice", "password123", "admin")
+      NervesPhotos.UserStore.put("alice", user)
+
+      conn =
+        conn(:post, "/login", "username=alice&password=wrongpassword")
+        |> put_req_header("content-type", "application/x-www-form-urlencoded")
+        |> put_in(
+          [Access.key(:secret_key_base)],
+          Application.get_env(:nerves_photos, :secret_key_base)
+        )
+        |> Plug.Session.call(@session_opts)
+        |> Plug.Conn.fetch_session()
+        |> Plug.Conn.put_private(:plug_skip_csrf_protection, true)
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+      assert conn.resp_body =~ "Invalid username or password"
+    end
+
+    test "POST /logout clears session and redirects to /login" do
+      conn =
+        authed_conn(:post, "/logout")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 302
+      assert get_resp_header(conn, "location") == ["/login"]
+    end
+  end
+
   describe "PUT /settings/photo_sources/:index" do
     setup do
       path = "/tmp/nerves_photos_test_put_#{:erlang.unique_integer([:positive])}.json"
