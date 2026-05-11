@@ -5,6 +5,13 @@ defmodule NervesPhotos.SettingsRouterTest do
 
   @opts NervesPhotos.SettingsRouter.init([])
 
+  @session_opts Plug.Session.init(
+                  store: :ets,
+                  key: "_nerves_photos_session",
+                  signing_salt: "nerves_photos_sess",
+                  table: :nerves_photos_sessions
+                )
+
   defmodule TestPhotoSource do
     def fetch_image("asset123", _config), do: {:ok, <<0xFF, 0xD8, 0xFF, 0xE0>>}
     def fetch_image(_, _), do: {:error, :not_found}
@@ -35,13 +42,28 @@ defmodule NervesPhotos.SettingsRouterTest do
     for mod <- [
           NervesPhotos.PhotoQueue,
           NervesPhotos.WeatherFetcher,
-          NervesPhotos.SettingsStore
+          NervesPhotos.SettingsStore,
+          NervesPhotos.UserStore
         ] do
       if pid = Process.whereis(mod), do: GenServer.stop(pid)
     end
 
     Application.delete_env(:nerves_photos, :req_options)
     :ok
+  end
+
+  defp authed_conn(method, path, params \\ nil) do
+    base = if params, do: conn(method, path, params), else: conn(method, path)
+
+    base
+    |> put_in(
+      [Access.key(:secret_key_base)],
+      Application.get_env(:nerves_photos, :secret_key_base)
+    )
+    |> Plug.Session.call(@session_opts)
+    |> Plug.Conn.fetch_session()
+    |> Plug.Conn.put_session("current_user", %{username: "testadmin", role: :admin})
+    |> Plug.Conn.put_private(:plug_skip_csrf_protection, true)
   end
 
   describe "GET /current/photo" do
@@ -59,7 +81,7 @@ defmodule NervesPhotos.SettingsRouterTest do
     end
 
     test "returns JPEG bytes by delegating to source module" do
-      conn = conn(:get, "/current/photo") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/current/photo") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.status == 200
       assert get_resp_header(conn, "content-type") == ["image/jpeg"]
       assert conn.resp_body == <<0xFF, 0xD8, 0xFF, 0xE0>>
@@ -69,7 +91,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       stop_supervised!(PhotoQueueStub)
       start_supervised!({PhotoQueueStub, %{current: :loading, queue_position: {0, 0}}})
 
-      conn = conn(:get, "/current/photo") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/current/photo") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.status == 503
     end
 
@@ -84,7 +106,7 @@ defmodule NervesPhotos.SettingsRouterTest do
          }}
       )
 
-      conn = conn(:get, "/current/photo") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/current/photo") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.status == 503
     end
   end
@@ -112,19 +134,19 @@ defmodule NervesPhotos.SettingsRouterTest do
     end
 
     test "returns 200 with photo img tag" do
-      conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.status == 200
       assert conn.resp_body =~ ~s(<img id="photo" src="/current/photo")
     end
 
     test "includes metadata overlay with date and location" do
-      conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "June 1, 2024"
       assert conn.resp_body =~ "Paris, France"
     end
 
     test "includes weather overlay" do
-      conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "73°F"
       assert conn.resp_body =~ "Sunny"
     end
@@ -133,7 +155,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       stop_supervised!(PhotoQueueStub)
       start_supervised!({PhotoQueueStub, %{current: :disconnected, queue_position: {0, 0}}})
 
-      conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "Reconnecting..."
     end
 
@@ -141,7 +163,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       stop_supervised!(PhotoQueueStub)
       start_supervised!({PhotoQueueStub, %{current: :empty, queue_position: {0, 0}}})
 
-      conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "No photos found"
     end
 
@@ -149,7 +171,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       stop_supervised!(PhotoQueueStub)
       start_supervised!({PhotoQueueStub, %{current: :not_configured, queue_position: {0, 0}}})
 
-      conn = conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/current") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "Not configured"
     end
   end
@@ -160,11 +182,19 @@ defmodule NervesPhotos.SettingsRouterTest do
       File.rm(path)
       start_supervised!({NervesPhotos.SettingsStore, [path: path]})
       on_exit(fn -> File.rm(path) end)
+
+      users_path =
+        System.tmp_dir!()
+        |> Path.join("nerves_photos_users_rt_#{:erlang.unique_integer([:positive])}.json")
+
+      start_supervised!({NervesPhotos.UserStore, path: users_path})
       :ok
     end
 
     test "returns empty JSON array when no sources configured" do
-      conn = conn(:get, "/settings/photo_sources") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn =
+        authed_conn(:get, "/settings/photo_sources") |> NervesPhotos.SettingsRouter.call(@opts)
+
       assert conn.status == 200
       assert Jason.decode!(conn.resp_body) == []
     end
@@ -174,7 +204,9 @@ defmodule NervesPhotos.SettingsRouterTest do
         %{type: "immich", url: "http://srv", api_key: "k", album_id: "a"}
       ])
 
-      conn = conn(:get, "/settings/photo_sources") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn =
+        authed_conn(:get, "/settings/photo_sources") |> NervesPhotos.SettingsRouter.call(@opts)
+
       assert conn.status == 200
       [source] = Jason.decode!(conn.resp_body)
       assert source["type"] == "immich"
@@ -187,6 +219,12 @@ defmodule NervesPhotos.SettingsRouterTest do
       File.rm(path)
       start_supervised!({NervesPhotos.SettingsStore, [path: path]})
       on_exit(fn -> File.rm(path) end)
+
+      users_path =
+        System.tmp_dir!()
+        |> Path.join("nerves_photos_users_rt_#{:erlang.unique_integer([:positive])}.json")
+
+      start_supervised!({NervesPhotos.UserStore, path: users_path})
       :ok
     end
 
@@ -194,7 +232,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       body = Jason.encode!(%{type: "immich", url: "http://srv", api_key: "k", album_id: "a"})
 
       conn =
-        conn(:post, "/settings/photo_sources", body)
+        authed_conn(:post, "/settings/photo_sources", body)
         |> put_req_header("content-type", "application/json")
         |> NervesPhotos.SettingsRouter.call(@opts)
 
@@ -208,7 +246,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       body = Jason.encode!(%{type: "google_photos", share_url: "https://photos.app.goo.gl/x"})
 
       conn =
-        conn(:post, "/settings/photo_sources", body)
+        authed_conn(:post, "/settings/photo_sources", body)
         |> put_req_header("content-type", "application/json")
         |> NervesPhotos.SettingsRouter.call(@opts)
 
@@ -221,7 +259,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       body = Jason.encode!(%{type: "dropbox", path: "/photos"})
 
       conn =
-        conn(:post, "/settings/photo_sources", body)
+        authed_conn(:post, "/settings/photo_sources", body)
         |> put_req_header("content-type", "application/json")
         |> NervesPhotos.SettingsRouter.call(@opts)
 
@@ -236,6 +274,12 @@ defmodule NervesPhotos.SettingsRouterTest do
       start_supervised!({NervesPhotos.SettingsStore, [path: path]})
       on_exit(fn -> File.rm(path) end)
 
+      users_path =
+        System.tmp_dir!()
+        |> Path.join("nerves_photos_users_rt_#{:erlang.unique_integer([:positive])}.json")
+
+      start_supervised!({NervesPhotos.UserStore, path: users_path})
+
       NervesPhotos.SettingsStore.put(:photo_sources, [
         %{type: "immich", url: "http://a", api_key: "k1", album_id: "a1"},
         %{type: "immich", url: "http://b", api_key: "k2", album_id: "a2"}
@@ -246,7 +290,7 @@ defmodule NervesPhotos.SettingsRouterTest do
 
     test "removes source at given index" do
       conn =
-        conn(:delete, "/settings/photo_sources/0")
+        authed_conn(:delete, "/settings/photo_sources/0")
         |> NervesPhotos.SettingsRouter.call(@opts)
 
       assert conn.status == 200
@@ -257,7 +301,7 @@ defmodule NervesPhotos.SettingsRouterTest do
 
     test "returns 404 for out-of-bounds index" do
       conn =
-        conn(:delete, "/settings/photo_sources/5")
+        authed_conn(:delete, "/settings/photo_sources/5")
         |> NervesPhotos.SettingsRouter.call(@opts)
 
       assert conn.status == 404
@@ -265,7 +309,7 @@ defmodule NervesPhotos.SettingsRouterTest do
 
     test "returns 400 for non-integer index" do
       conn =
-        conn(:delete, "/settings/photo_sources/abc")
+        authed_conn(:delete, "/settings/photo_sources/abc")
         |> NervesPhotos.SettingsRouter.call(@opts)
 
       assert conn.status == 400
@@ -278,11 +322,17 @@ defmodule NervesPhotos.SettingsRouterTest do
       File.rm(path)
       start_supervised!({NervesPhotos.SettingsStore, [path: path]})
       on_exit(fn -> File.rm(path) end)
+
+      users_path =
+        System.tmp_dir!()
+        |> Path.join("nerves_photos_users_rt_#{:erlang.unique_integer([:positive])}.json")
+
+      start_supervised!({NervesPhotos.UserStore, path: users_path})
       :ok
     end
 
     test "renders sidebar with all four nav items" do
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.status == 200
       assert conn.resp_body =~ "Display"
       assert conn.resp_body =~ "WiFi"
@@ -291,7 +341,7 @@ defmodule NervesPhotos.SettingsRouterTest do
     end
 
     test "display section is visible by default, others hidden" do
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       body = conn.resp_body
       assert body =~ ~s(id="section-display")
       assert body =~ ~s(id="section-wifi" style="display:none")
@@ -303,7 +353,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       NervesPhotos.SettingsStore.put(:slide_interval_ms, 60_000)
       NervesPhotos.SettingsStore.put(:weather_zip, "90210")
 
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       body = conn.resp_body
       assert body =~ ~s(name="slide_interval_ms")
       assert body =~ ~s(value="60")
@@ -314,7 +364,7 @@ defmodule NervesPhotos.SettingsRouterTest do
     test "wifi section contains ssid field and status" do
       NervesPhotos.SettingsStore.put(:wifi_ssid, "MyNetwork")
 
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       body = conn.resp_body
       assert body =~ ~s(name="wifi_ssid")
       assert body =~ "MyNetwork"
@@ -323,7 +373,7 @@ defmodule NervesPhotos.SettingsRouterTest do
     end
 
     test "page includes section-switching JavaScript" do
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       body = conn.resp_body
       assert body =~ "function showSection"
       assert body =~ "function toggleEdit"
@@ -334,7 +384,7 @@ defmodule NervesPhotos.SettingsRouterTest do
     end
 
     test "users section shows coming soon message" do
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "Coming soon"
     end
   end
@@ -345,11 +395,17 @@ defmodule NervesPhotos.SettingsRouterTest do
       File.rm(path)
       start_supervised!({NervesPhotos.SettingsStore, [path: path]})
       on_exit(fn -> File.rm(path) end)
+
+      users_path =
+        System.tmp_dir!()
+        |> Path.join("nerves_photos_users_rt_#{:erlang.unique_integer([:positive])}.json")
+
+      start_supervised!({NervesPhotos.UserStore, path: users_path})
       :ok
     end
 
     test "shows empty state when no sources configured" do
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ "No photo sources configured"
     end
 
@@ -359,7 +415,7 @@ defmodule NervesPhotos.SettingsRouterTest do
         %{type: "google_photos", share_url: "https://photos.app.goo.gl/x"}
       ])
 
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       body = conn.resp_body
       assert body =~ "Immich"
       assert body =~ "192.168.1.10"
@@ -371,12 +427,12 @@ defmodule NervesPhotos.SettingsRouterTest do
         %{type: "immich", url: "http://srv", api_key: "k", album_id: "a"}
       ])
 
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       assert conn.resp_body =~ ~s[onclick="deleteSource(0)"]
     end
 
     test "add immich form contains required fields" do
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       body = conn.resp_body
       assert body =~ ~s(id="add-immich-form")
       assert body =~ ~s(placeholder="http://192.168.1.10:2283")
@@ -385,7 +441,7 @@ defmodule NervesPhotos.SettingsRouterTest do
     end
 
     test "add google photos form contains share_url field" do
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       body = conn.resp_body
       assert body =~ ~s(id="add-google-form")
       assert body =~ ~s(name="share_url")
@@ -396,7 +452,7 @@ defmodule NervesPhotos.SettingsRouterTest do
         %{type: "immich", url: "http://192.168.1.10:2283", api_key: "mykey", album_id: "abc-uuid"}
       ])
 
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       body = conn.resp_body
       assert body =~ ~s(id="edit-form-0")
       assert body =~ "http://192.168.1.10:2283"
@@ -409,7 +465,7 @@ defmodule NervesPhotos.SettingsRouterTest do
         %{type: "google_photos", share_url: "https://photos.app.goo.gl/test123"}
       ])
 
-      conn = conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
+      conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
       body = conn.resp_body
       assert body =~ ~s(id="edit-form-0")
       assert body =~ "https://photos.app.goo.gl/test123"
@@ -423,6 +479,12 @@ defmodule NervesPhotos.SettingsRouterTest do
       start_supervised!({NervesPhotos.SettingsStore, [path: path]})
       on_exit(fn -> File.rm(path) end)
 
+      users_path =
+        System.tmp_dir!()
+        |> Path.join("nerves_photos_users_rt_#{:erlang.unique_integer([:positive])}.json")
+
+      start_supervised!({NervesPhotos.UserStore, path: users_path})
+
       NervesPhotos.SettingsStore.put(:photo_sources, [
         %{type: "immich", url: "http://a", api_key: "k1", album_id: "a1"},
         %{type: "google_photos", share_url: "https://photos.app.goo.gl/x"}
@@ -435,7 +497,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       body = Jason.encode!(%{type: "immich", url: "http://new", api_key: "k2", album_id: "a2"})
 
       conn =
-        conn(:put, "/settings/photo_sources/0", body)
+        authed_conn(:put, "/settings/photo_sources/0", body)
         |> put_req_header("content-type", "application/json")
         |> NervesPhotos.SettingsRouter.call(@opts)
 
@@ -450,7 +512,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       body = Jason.encode!(%{type: "immich", url: "http://new", api_key: "k2", album_id: "a2"})
 
       conn =
-        conn(:put, "/settings/photo_sources/0", body)
+        authed_conn(:put, "/settings/photo_sources/0", body)
         |> put_req_header("content-type", "application/json")
         |> NervesPhotos.SettingsRouter.call(@opts)
 
@@ -463,7 +525,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       body = Jason.encode!(%{type: "immich", url: "http://new", api_key: "k2", album_id: "a2"})
 
       conn =
-        conn(:put, "/settings/photo_sources/5", body)
+        authed_conn(:put, "/settings/photo_sources/5", body)
         |> put_req_header("content-type", "application/json")
         |> NervesPhotos.SettingsRouter.call(@opts)
 
@@ -474,7 +536,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       body = Jason.encode!(%{type: "dropbox", path: "/photos"})
 
       conn =
-        conn(:put, "/settings/photo_sources/0", body)
+        authed_conn(:put, "/settings/photo_sources/0", body)
         |> put_req_header("content-type", "application/json")
         |> NervesPhotos.SettingsRouter.call(@opts)
 
@@ -485,7 +547,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       body = Jason.encode!(%{type: "immich", url: "http://new", album_id: "a2"})
 
       conn =
-        conn(:put, "/settings/photo_sources/0", body)
+        authed_conn(:put, "/settings/photo_sources/0", body)
         |> put_req_header("content-type", "application/json")
         |> NervesPhotos.SettingsRouter.call(@opts)
 
@@ -498,7 +560,7 @@ defmodule NervesPhotos.SettingsRouterTest do
       body = Jason.encode!(%{type: "immich", url: "http://new", api_key: "k2", album_id: "a2"})
 
       conn =
-        conn(:put, "/settings/photo_sources/abc", body)
+        authed_conn(:put, "/settings/photo_sources/abc", body)
         |> put_req_header("content-type", "application/json")
         |> NervesPhotos.SettingsRouter.call(@opts)
 
