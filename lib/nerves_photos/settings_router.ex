@@ -216,6 +216,92 @@ defmodule NervesPhotos.SettingsRouter do
     end
   end
 
+  get "/settings/users" do
+    case Bodyguard.permit(NervesPhotos.Policy, :manage_users, conn.assigns.current_user) do
+      :ok ->
+        users = NervesPhotos.UserStore.all()
+        send_resp(conn, 200, render_users_page(users, conn.assigns.current_user))
+
+      {:error, _} ->
+        send_resp(conn, 403, "Forbidden")
+    end
+  end
+
+  post "/settings/users" do
+    case Bodyguard.permit(NervesPhotos.Policy, :manage_users, conn.assigns.current_user) do
+      :ok ->
+        params = conn.body_params
+        username = params["username"] || ""
+        password = params["password"] || ""
+        role = params["role"] || ""
+
+        case NervesPhotos.User.new(username, password, role) do
+          {:ok, user} ->
+            NervesPhotos.UserStore.put(username, user)
+
+            conn
+            |> put_resp_header("location", "/settings/users")
+            |> send_resp(302, "")
+
+          {:error, reason} ->
+            users = NervesPhotos.UserStore.all()
+            send_resp(conn, 422, render_users_page(users, conn.assigns.current_user, reason))
+        end
+
+      {:error, _} ->
+        send_resp(conn, 403, "Forbidden")
+    end
+  end
+
+  delete "/settings/users/:username" do
+    case Bodyguard.permit(NervesPhotos.Policy, :manage_users, conn.assigns.current_user) do
+      :ok ->
+        NervesPhotos.UserStore.delete(conn.params["username"])
+
+        conn
+        |> put_resp_header("content-type", "application/json")
+        |> send_resp(200, Jason.encode!(%{ok: true}))
+
+      {:error, _} ->
+        conn
+        |> put_resp_header("content-type", "application/json")
+        |> send_resp(403, Jason.encode!(%{error: "forbidden"}))
+    end
+  end
+
+  patch "/settings/users/:username/role" do
+    case Bodyguard.permit(NervesPhotos.Policy, :manage_users, conn.assigns.current_user) do
+      :ok ->
+        username = conn.params["username"]
+        new_role = conn.body_params["role"] || ""
+
+        if new_role in ~w(admin editor) do
+          case NervesPhotos.UserStore.get(username) do
+            nil ->
+              conn
+              |> put_resp_header("content-type", "application/json")
+              |> send_resp(404, Jason.encode!(%{error: "user not found"}))
+
+            user ->
+              NervesPhotos.UserStore.put(username, %{user | role: new_role})
+
+              conn
+              |> put_resp_header("content-type", "application/json")
+              |> send_resp(200, Jason.encode!(%{ok: true}))
+          end
+        else
+          conn
+          |> put_resp_header("content-type", "application/json")
+          |> send_resp(422, Jason.encode!(%{error: "invalid role"}))
+        end
+
+      {:error, _} ->
+        conn
+        |> put_resp_header("content-type", "application/json")
+        |> send_resp(403, Jason.encode!(%{error: "forbidden"}))
+    end
+  end
+
   get "/current/photo" do
     case safe_call(NervesPhotos.PhotoQueue, :current, nil) do
       {module, source_id, config, _meta} ->
@@ -468,7 +554,7 @@ defmodule NervesPhotos.SettingsRouter do
         <div id="section-display">#{render_display_section(s)}</div>
         <div id="section-wifi" style="display:none">#{render_wifi_section(s, wifi_mode)}</div>
         <div id="section-sources" style="display:none">#{render_sources_section(s)}</div>
-        <div id="section-users" style="display:none">#{render_users_placeholder()}</div>
+        <div id="section-users" style="display:none"></div>
       </div>
     </div>
     #{render_settings_js()}
@@ -477,7 +563,7 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
-  defp render_sidebar(active, current_user) do
+  defp render_sidebar(active, current_user, kind \\ :settings) do
     items = [
       {"display", "Display"},
       {"wifi", "WiFi"},
@@ -487,12 +573,18 @@ defmodule NervesPhotos.SettingsRouter do
     nav_links =
       Enum.map_join(items, "\n", fn {id, label} ->
         class = if id == active, do: "nav-item active", else: "nav-item"
-        "<a class=\"#{class}\" onclick=\"showSection('#{id}')\">#{label}</a>"
+
+        if kind == :settings do
+          "<a class=\"#{class}\" onclick=\"showSection('#{id}')\">#{label}</a>"
+        else
+          "<a class=\"#{class}\" href=\"/settings\">#{label}</a>"
+        end
       end)
 
     users_link =
       if current_user && current_user.role == :admin do
-        ~s(<a class="nav-item" href="/settings/users">Users</a>)
+        class = if active == "users", do: "nav-item active", else: "nav-item"
+        ~s(<a class="#{class}" href="/settings/users">Users</a>)
       else
         ""
       end
@@ -500,11 +592,9 @@ defmodule NervesPhotos.SettingsRouter do
     csrf = Plug.CSRFProtection.get_csrf_token()
 
     logout_name =
-      if current_user && current_user.username do
-        " (" <> Plug.HTML.html_escape(current_user.username) <> ")"
-      else
-        ""
-      end
+      if current_user && current_user.username,
+        do: " (#{Plug.HTML.html_escape(current_user.username)})",
+        else: ""
 
     """
     <div class="sidebar">
@@ -785,10 +875,132 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
-  defp render_users_placeholder do
+  defp render_users_page(users, current_user, error \\ nil) do
+    csrf = Plug.CSRFProtection.get_csrf_token()
+
+    error_html =
+      if error,
+        do:
+          ~s(<div style="color:#b91c1c;background:#fef2f2;padding:10px;border-radius:4px;font-size:13px;margin-bottom:12px">#{Plug.HTML.html_escape(error)}</div>),
+        else: ""
+
+    user_rows =
+      Enum.map_join(users, "\n", fn user ->
+        uname = Plug.HTML.html_escape(user.username)
+        role = user.role
+
+        """
+        <div class="source-row">
+          <div class="source-header">
+            <div>
+              <span class="source-type">#{uname}</span>
+              <span class="source-desc">#{Plug.HTML.html_escape(role)}</span>
+            </div>
+            <div class="source-actions">
+              <button class="btn-secondary" type="button"
+                onclick="changeRole('#{uname}', '#{if role == "admin", do: "editor", else: "admin"}')">
+                Make #{if role == "admin", do: "Editor", else: "Admin"}
+              </button>
+              <button class="btn-danger" type="button"
+                onclick="deleteUser('#{uname}')">Delete</button>
+            </div>
+          </div>
+        </div>
+        """
+      end)
+
+    empty_msg =
+      if users == [],
+        do: ~s(<p style="color:#94a3b8;font-size:14px">No users yet.</p>),
+        else: ""
+
     """
-    <div class="section-title" style="color:#94a3b8">Users</div>
-    <p style="color:#94a3b8;font-size:14px">Coming soon. User management will be added in a future release.</p>
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>NervesPhotos Settings</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <meta name="csrf-token" content="#{csrf}">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: sans-serif; background: #f8f9fa; min-height: 100vh; }
+        .page { display: flex; min-height: 100vh; }
+        .sidebar { width: 200px; background: #1e293b; flex-shrink: 0; padding-top: 24px; display: flex; flex-direction: column; }
+        .sidebar-title { color: #64748b; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; padding: 0 20px 12px; }
+        .nav-item { display: block; padding: 10px 20px; color: #94a3b8; cursor: pointer; font-size: 14px; border-left: 3px solid transparent; text-decoration: none; }
+        .nav-item.active { color: #e2e8f0; background: #334155; border-left-color: #3b82f6; }
+        .content { flex: 1; padding: 32px; max-width: 520px; }
+        .section-title { font-size: 18px; font-weight: 600; color: #1e293b; margin-bottom: 24px; }
+        label { display: block; margin-top: 16px; font-size: 13px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+        input[type=text], input[type=number], input[type=password], select { width: 100%; padding: 8px 10px; margin-top: 4px; box-sizing: border-box; font-size: 15px; border: 1px solid #cbd5e1; border-radius: 4px; }
+        .btn-primary { padding: 9px 20px; background: #3b82f6; color: white; border: none; font-size: 14px; border-radius: 4px; cursor: pointer; }
+        .btn-secondary { padding: 7px 14px; background: #e2e8f0; color: #475569; border: none; font-size: 13px; border-radius: 4px; cursor: pointer; }
+        .btn-danger { padding: 7px 10px; background: transparent; color: #ef4444; border: 1px solid #fecaca; font-size: 12px; border-radius: 4px; cursor: pointer; }
+        .source-row { background: white; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 8px; }
+        .source-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; }
+        .source-type { font-size: 13px; font-weight: 600; }
+        .source-desc { font-size: 12px; color: #94a3b8; margin-left: 8px; }
+        .source-actions { display: flex; gap: 8px; }
+        .add-form { background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 16px; margin-top: 16px; }
+      </style>
+    </head>
+    <body>
+    <div class="page">
+      #{render_sidebar("users", current_user, :users_page)}
+      <div class="content">
+        <div class="section-title">Users</div>
+        #{error_html}
+        #{empty_msg}
+        #{user_rows}
+        <div class="add-form">
+          <div style="font-size:13px;font-weight:600;margin-bottom:12px">Add User</div>
+          <form method="POST" action="/settings/users">
+            <input type="hidden" name="_csrf_token" value="#{csrf}">
+            <label>Username
+              <input type="text" name="username" required>
+            </label>
+            <label>Password (min 8 characters)
+              <input type="password" name="password" required>
+            </label>
+            <label>Role
+              <select name="role">
+                <option value="editor">Editor</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+            <button type="submit" class="btn-primary" style="margin-top:16px">Add User</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <script>
+    function getCsrfToken() {
+      var meta = document.querySelector('meta[name="csrf-token"]');
+      return meta ? meta.getAttribute('content') : '';
+    }
+    function deleteUser(username) {
+      if (!confirm('Delete user ' + username + '?')) return;
+      fetch('/settings/users/' + encodeURIComponent(username), {
+        method: 'DELETE',
+        headers: {'x-csrf-token': getCsrfToken()}
+      }).then(function(r) {
+        if (r.ok) { location.reload(); }
+        else { r.json().then(function(e) { alert(e.error || 'Delete failed'); }); }
+      }).catch(function() { alert('Network error. Please try again.'); });
+    }
+    function changeRole(username, newRole) {
+      fetch('/settings/users/' + encodeURIComponent(username) + '/role', {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json', 'x-csrf-token': getCsrfToken()},
+        body: JSON.stringify({role: newRole})
+      }).then(function(r) {
+        if (r.ok) { location.reload(); }
+        else { r.json().then(function(e) { alert(e.error || 'Role change failed'); }); }
+      }).catch(function() { alert('Network error. Please try again.'); });
+    }
+    </script>
+    </body>
+    </html>
     """
   end
 

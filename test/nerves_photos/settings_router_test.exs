@@ -383,9 +383,9 @@ defmodule NervesPhotos.SettingsRouterTest do
       assert body =~ "function submitEditForm"
     end
 
-    test "users section shows coming soon message" do
+    test "users section div is present in page" do
       conn = authed_conn(:get, "/settings") |> NervesPhotos.SettingsRouter.call(@opts)
-      assert conn.resp_body =~ "Coming soon"
+      assert conn.resp_body =~ ~s(id="section-users")
     end
   end
 
@@ -723,6 +723,108 @@ defmodule NervesPhotos.SettingsRouterTest do
         |> NervesPhotos.SettingsRouter.call(@opts)
 
       assert conn.status == 400
+    end
+  end
+
+  describe "user management routes" do
+    setup do
+      users_path =
+        System.tmp_dir!()
+        |> Path.join("nerves_photos_users_mgmt_#{:erlang.unique_integer([:positive])}.json")
+
+      start_supervised!({NervesPhotos.UserStore, path: users_path})
+      :ok
+    end
+
+    test "GET /settings/users returns 200 for admin" do
+      conn =
+        authed_conn(:get, "/settings/users")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+      assert conn.resp_body =~ "Users"
+    end
+
+    test "GET /settings/users returns 403 for editor" do
+      conn =
+        conn(:get, "/settings/users")
+        |> put_in(
+          [Access.key(:secret_key_base)],
+          Application.get_env(:nerves_photos, :secret_key_base)
+        )
+        |> Plug.Session.call(@session_opts)
+        |> Plug.Conn.fetch_session()
+        |> Plug.Conn.put_session("current_user", %{username: "ed", role: :editor})
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 403
+    end
+
+    test "POST /settings/users adds a user and redirects" do
+      conn =
+        authed_conn(:post, "/settings/users", "username=bob&password=password123&role=editor")
+        |> put_req_header("content-type", "application/x-www-form-urlencoded")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 302
+      assert NervesPhotos.UserStore.get("bob") != nil
+      assert NervesPhotos.UserStore.get("bob").role == "editor"
+    end
+
+    test "POST /settings/users returns 422 for invalid user" do
+      conn =
+        authed_conn(:post, "/settings/users", "username=bob&password=short&role=editor")
+        |> put_req_header("content-type", "application/x-www-form-urlencoded")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 422
+      assert conn.resp_body =~ "8"
+    end
+
+    test "DELETE /settings/users/:username removes user" do
+      {:ok, user} = NervesPhotos.User.new("charlie", "password123", "editor")
+      NervesPhotos.UserStore.put("charlie", user)
+
+      conn =
+        authed_conn(:delete, "/settings/users/charlie")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+      assert NervesPhotos.UserStore.get("charlie") == nil
+    end
+
+    test "PATCH /settings/users/:username/role changes role" do
+      {:ok, user} = NervesPhotos.User.new("dana", "password123", "editor")
+      NervesPhotos.UserStore.put("dana", user)
+
+      body = Jason.encode!(%{role: "admin"})
+
+      conn =
+        authed_conn(:patch, "/settings/users/dana/role", body)
+        |> put_req_header("content-type", "application/json")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+      assert NervesPhotos.UserStore.get("dana").role == "admin"
+    end
+
+    test "DELETE /settings/users returns 403 for editor" do
+      {:ok, user} = NervesPhotos.User.new("eve", "password123", "editor")
+      NervesPhotos.UserStore.put("eve", user)
+
+      conn =
+        conn(:delete, "/settings/users/eve")
+        |> put_in(
+          [Access.key(:secret_key_base)],
+          Application.get_env(:nerves_photos, :secret_key_base)
+        )
+        |> Plug.Session.call(@session_opts)
+        |> Plug.Conn.fetch_session()
+        |> Plug.Conn.put_session("current_user", %{username: "ed", role: :editor})
+        |> Plug.Conn.put_private(:plug_skip_csrf_protection, true)
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 403
     end
   end
 end
