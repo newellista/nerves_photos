@@ -20,7 +20,14 @@ defmodule NervesPhotos.User do
     Bcrypt.verify_pass(password, hash)
   end
 
-  defp validate_username(u) when is_binary(u) and u != "", do: :ok
+  @username_pattern ~r/\A[a-zA-Z0-9_.\-]+\z/
+
+  defp validate_username(u) when is_binary(u) and u != "" do
+    if Regex.match?(@username_pattern, u),
+      do: :ok,
+      else: {:error, "username may only contain letters, digits, underscores, dots, and hyphens"}
+  end
+
   defp validate_username(_), do: {:error, "username cannot be blank"}
 
   defp validate_password(p) when is_binary(p) and byte_size(p) >= 8, do: :ok

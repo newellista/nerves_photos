@@ -27,6 +27,7 @@ defmodule NervesPhotos.AuthPlugTest do
       System.tmp_dir!()
       |> Path.join("nerves_photos_users_auth_#{:erlang.unique_integer([:positive])}.json")
 
+    File.rm(path)
     start_supervised!({NervesPhotos.UserStore, path: path})
     :ok
   end

@@ -15,6 +15,14 @@ defmodule NervesPhotos.UserTest do
     assert {:error, _reason} = User.new("", "password123", "admin")
   end
 
+  test "new/3 returns error when username contains invalid characters" do
+    assert {:error, _reason} = User.new("alice'; DROP TABLE", "password123", "admin")
+  end
+
+  test "new/3 accepts usernames with letters, digits, underscores, dots, hyphens" do
+    assert {:ok, _} = User.new("alice.b-ob_2", "password123", "admin")
+  end
+
   test "new/3 returns error when password is fewer than 8 characters" do
     assert {:error, reason} = User.new("alice", "short", "admin")
     assert reason =~ "8"

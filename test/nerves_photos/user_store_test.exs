@@ -8,6 +8,7 @@ defmodule NervesPhotos.UserStoreTest do
       System.tmp_dir!()
       |> Path.join("nerves_photos_users_test_#{:erlang.unique_integer([:positive])}.json")
 
+    File.rm(path)
     {:ok, _} = start_supervised({UserStore, path: path})
     {:ok, path: path}
   end

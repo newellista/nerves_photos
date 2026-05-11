@@ -187,6 +187,7 @@ defmodule NervesPhotos.SettingsRouterTest do
         System.tmp_dir!()
         |> Path.join("nerves_photos_users_rt_#{:erlang.unique_integer([:positive])}.json")
 
+      File.rm(users_path)
       start_supervised!({NervesPhotos.UserStore, path: users_path})
       :ok
     end
@@ -224,6 +225,7 @@ defmodule NervesPhotos.SettingsRouterTest do
         System.tmp_dir!()
         |> Path.join("nerves_photos_users_rt_#{:erlang.unique_integer([:positive])}.json")
 
+      File.rm(users_path)
       start_supervised!({NervesPhotos.UserStore, path: users_path})
       :ok
     end
@@ -278,6 +280,7 @@ defmodule NervesPhotos.SettingsRouterTest do
         System.tmp_dir!()
         |> Path.join("nerves_photos_users_rt_#{:erlang.unique_integer([:positive])}.json")
 
+      File.rm(users_path)
       start_supervised!({NervesPhotos.UserStore, path: users_path})
 
       NervesPhotos.SettingsStore.put(:photo_sources, [
@@ -327,6 +330,7 @@ defmodule NervesPhotos.SettingsRouterTest do
         System.tmp_dir!()
         |> Path.join("nerves_photos_users_rt_#{:erlang.unique_integer([:positive])}.json")
 
+      File.rm(users_path)
       start_supervised!({NervesPhotos.UserStore, path: users_path})
       :ok
     end
@@ -400,6 +404,7 @@ defmodule NervesPhotos.SettingsRouterTest do
         System.tmp_dir!()
         |> Path.join("nerves_photos_users_rt_#{:erlang.unique_integer([:positive])}.json")
 
+      File.rm(users_path)
       start_supervised!({NervesPhotos.UserStore, path: users_path})
       :ok
     end
@@ -478,6 +483,7 @@ defmodule NervesPhotos.SettingsRouterTest do
         System.tmp_dir!()
         |> Path.join("nerves_photos_users_login_#{:erlang.unique_integer([:positive])}.json")
 
+      File.rm(path)
       start_supervised!({NervesPhotos.UserStore, path: path})
       :ok
     end
@@ -590,6 +596,7 @@ defmodule NervesPhotos.SettingsRouterTest do
         System.tmp_dir!()
         |> Path.join("nerves_photos_users_del_#{:erlang.unique_integer([:positive])}.json")
 
+      File.rm(users_path)
       start_supervised!({NervesPhotos.UserStore, path: users_path})
 
       settings_path =
@@ -641,6 +648,7 @@ defmodule NervesPhotos.SettingsRouterTest do
         System.tmp_dir!()
         |> Path.join("nerves_photos_users_rt_#{:erlang.unique_integer([:positive])}.json")
 
+      File.rm(users_path)
       start_supervised!({NervesPhotos.UserStore, path: users_path})
 
       NervesPhotos.SettingsStore.put(:photo_sources, [
@@ -732,6 +740,7 @@ defmodule NervesPhotos.SettingsRouterTest do
         System.tmp_dir!()
         |> Path.join("nerves_photos_users_mgmt_#{:erlang.unique_integer([:positive])}.json")
 
+      File.rm(users_path)
       start_supervised!({NervesPhotos.UserStore, path: users_path})
       :ok
     end
