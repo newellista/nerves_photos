@@ -104,6 +104,9 @@ defmodule NervesPhotos.MixProject do
       # Web settings UI
       {:plug, "~> 1.0"},
       {:plug_cowboy, "~> 2.7"},
+      {:bcrypt_elixir, "~> 3.0"},
+      {:comeonin, "~> 5.0"},
+      {:bodyguard, "~> 2.4"},
 
       # Dev tooling
       {:credo, "~> 1.7", only: :dev, runtime: false},

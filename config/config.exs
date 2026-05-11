@@ -27,6 +27,9 @@ config :nerves_photos, :viewport, %{
   ]
 }
 
+config :nerves_photos,
+  secret_key_base: "nerves_photos_default_secret_key_base_change_before_shipping_xxxxxxxxxxx"
+
 if Mix.target() == :host do
   import_config "host.exs"
 else
