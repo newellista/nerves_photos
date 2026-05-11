@@ -35,24 +35,22 @@ defmodule NervesPhotos.SettingsRouter do
     if users == [] do
       password_confirm = params["password_confirm"] || ""
 
-      cond do
-        password != password_confirm ->
-          send_resp(conn, 200, render_login(true, "Passwords do not match"))
+      if password != password_confirm do
+        send_resp(conn, 200, render_login(true, "Passwords do not match"))
+      else
+        case NervesPhotos.User.new(username, password, "admin") do
+          {:ok, user} ->
+            NervesPhotos.UserStore.put(username, user)
 
-        true ->
-          case NervesPhotos.User.new(username, password, "admin") do
-            {:ok, user} ->
-              NervesPhotos.UserStore.put(username, user)
+            conn
+            |> put_session("current_user", %{username: username, role: :admin})
+            |> configure_session(renew: true)
+            |> put_resp_header("location", "/settings")
+            |> send_resp(302, "")
 
-              conn
-              |> put_session("current_user", %{username: username, role: :admin})
-              |> configure_session(renew: true)
-              |> put_resp_header("location", "/settings")
-              |> send_resp(302, "")
-
-            {:error, reason} ->
-              send_resp(conn, 200, render_login(true, reason))
-          end
+          {:error, reason} ->
+            send_resp(conn, 200, render_login(true, reason))
+        end
       end
     else
       case NervesPhotos.UserStore.get(username) do
@@ -659,44 +657,46 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
+  defp render_source_row({source, idx}) do
+    {type_label, type_class, desc} =
+      case source[:type] do
+        "immich" ->
+          host = URI.parse(source[:url] || "").host || source[:url] || ""
+          {"Immich", "source-type-immich", Plug.HTML.html_escape(host)}
+
+        "google_photos" ->
+          {"Google Photos", "source-type-google", "Shared album"}
+
+        other ->
+          {Plug.HTML.html_escape(other || ""), "", ""}
+      end
+
+    """
+    <div class="source-row" id="source-row-#{idx}">
+      <div class="source-header">
+        <div>
+          <span class="source-type #{type_class}">#{type_label}</span>
+          <span class="source-desc">#{desc}</span>
+        </div>
+        <div class="source-actions">
+          <button class="btn-secondary" type="button" onclick="toggleEdit(#{idx})">Edit</button>
+          <button class="btn-danger" type="button" onclick="deleteSource(#{idx})">Delete</button>
+        </div>
+      </div>
+      <div id="edit-form-#{idx}" style="display:none" class="inline-form">
+        #{render_edit_form(source, idx)}
+      </div>
+    </div>
+    """
+  end
+
   defp render_sources_section(s) do
     sources = Map.get(s, :photo_sources) || []
 
     source_rows =
       sources
       |> Enum.with_index()
-      |> Enum.map_join("\n", fn {source, idx} ->
-        {type_label, type_class, desc} =
-          case source[:type] do
-            "immich" ->
-              host = URI.parse(source[:url] || "").host || source[:url] || ""
-              {"Immich", "source-type-immich", Plug.HTML.html_escape(host)}
-
-            "google_photos" ->
-              {"Google Photos", "source-type-google", "Shared album"}
-
-            other ->
-              {Plug.HTML.html_escape(other || ""), "", ""}
-          end
-
-        """
-        <div class="source-row" id="source-row-#{idx}">
-          <div class="source-header">
-            <div>
-              <span class="source-type #{type_class}">#{type_label}</span>
-              <span class="source-desc">#{desc}</span>
-            </div>
-            <div class="source-actions">
-              <button class="btn-secondary" type="button" onclick="toggleEdit(#{idx})">Edit</button>
-              <button class="btn-danger" type="button" onclick="deleteSource(#{idx})">Delete</button>
-            </div>
-          </div>
-          <div id="edit-form-#{idx}" style="display:none" class="inline-form">
-            #{render_edit_form(source, idx)}
-          </div>
-        </div>
-        """
-      end)
+      |> Enum.map_join("\n", &render_source_row/1)
 
     empty_msg =
       if sources == [],
