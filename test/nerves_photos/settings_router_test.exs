@@ -584,6 +584,52 @@ defmodule NervesPhotos.SettingsRouterTest do
     end
   end
 
+  describe "DELETE /settings/photo_sources authorization" do
+    setup do
+      users_path =
+        System.tmp_dir!()
+        |> Path.join("nerves_photos_users_del_#{:erlang.unique_integer([:positive])}.json")
+
+      start_supervised!({NervesPhotos.UserStore, path: users_path})
+
+      settings_path =
+        System.tmp_dir!()
+        |> Path.join("nerves_photos_test_del_auth_#{:erlang.unique_integer([:positive])}.json")
+
+      start_supervised!({NervesPhotos.SettingsStore, path: settings_path})
+
+      NervesPhotos.SettingsStore.put(:photo_sources, [
+        %{type: "immich", url: "http://a", api_key: "k", album_id: "a1"}
+      ])
+
+      :ok
+    end
+
+    test "admin can delete a photo source" do
+      conn =
+        authed_conn(:delete, "/settings/photo_sources/0")
+        |> NervesPhotos.SettingsRouter.call(@opts)
+
+      assert conn.status == 200
+    end
+
+    test "editor gets 403 when deleting a photo source" do
+      editor_conn =
+        conn(:delete, "/settings/photo_sources/0")
+        |> put_in(
+          [Access.key(:secret_key_base)],
+          Application.get_env(:nerves_photos, :secret_key_base)
+        )
+        |> Plug.Session.call(@session_opts)
+        |> Plug.Conn.fetch_session()
+        |> Plug.Conn.put_session("current_user", %{username: "ed", role: :editor})
+        |> Plug.Conn.put_private(:plug_skip_csrf_protection, true)
+
+      conn = NervesPhotos.SettingsRouter.call(editor_conn, @opts)
+      assert conn.status == 403
+    end
+  end
+
   describe "PUT /settings/photo_sources/:index" do
     setup do
       path = "/tmp/nerves_photos_test_put_#{:erlang.unique_integer([:positive])}.json"

@@ -90,7 +90,7 @@ defmodule NervesPhotos.SettingsRouter do
         GenServer.call(pid, :mode)
       end
 
-    send_resp(conn, 200, render_page(settings, wifi_mode))
+    send_resp(conn, 200, render_page(settings, wifi_mode, conn.assigns.current_user))
   end
 
   post "/settings" do
@@ -155,48 +155,64 @@ defmodule NervesPhotos.SettingsRouter do
   end
 
   delete "/settings/photo_sources/:index" do
-    sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
+    case Bodyguard.permit(NervesPhotos.Policy, :delete_source, conn.assigns.current_user) do
+      :ok ->
+        sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
 
-    case Integer.parse(conn.params["index"]) do
-      {idx, ""} when idx >= 0 and idx < length(sources) ->
-        updated = List.delete_at(sources, idx)
-        NervesPhotos.SettingsStore.put(:photo_sources, updated)
+        case Integer.parse(conn.params["index"]) do
+          {idx, ""} when idx >= 0 and idx < length(sources) ->
+            updated = List.delete_at(sources, idx)
+            NervesPhotos.SettingsStore.put(:photo_sources, updated)
 
+            conn
+            |> put_resp_header("content-type", "application/json")
+            |> send_resp(200, Jason.encode!(updated))
+
+          {idx, ""} when idx >= 0 ->
+            send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
+
+          _ ->
+            send_resp(conn, 400, Jason.encode!(%{error: "invalid index"}))
+        end
+
+      {:error, _} ->
         conn
         |> put_resp_header("content-type", "application/json")
-        |> send_resp(200, Jason.encode!(updated))
-
-      {idx, ""} when idx >= 0 ->
-        send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
-
-      _ ->
-        send_resp(conn, 400, Jason.encode!(%{error: "invalid index"}))
+        |> send_resp(403, Jason.encode!(%{error: "forbidden"}))
     end
   end
 
   put "/settings/photo_sources/:index" do
-    sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
-    source = atomize_source_params(conn.body_params)
+    case Bodyguard.permit(NervesPhotos.Policy, :manage_sources, conn.assigns.current_user) do
+      :ok ->
+        sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
+        source = atomize_source_params(conn.body_params)
 
-    case Integer.parse(conn.params["index"]) do
-      {idx, ""} when idx >= 0 and idx < length(sources) ->
-        if source[:type] in @valid_source_types do
-          merged = Map.merge(Enum.at(sources, idx), source)
-          updated = List.replace_at(sources, idx, merged)
-          NervesPhotos.SettingsStore.put(:photo_sources, updated)
+        case Integer.parse(conn.params["index"]) do
+          {idx, ""} when idx >= 0 and idx < length(sources) ->
+            if source[:type] in @valid_source_types do
+              merged = Map.merge(Enum.at(sources, idx), source)
+              updated = List.replace_at(sources, idx, merged)
+              NervesPhotos.SettingsStore.put(:photo_sources, updated)
 
-          conn
-          |> put_resp_header("content-type", "application/json")
-          |> send_resp(200, Jason.encode!(merged))
-        else
-          send_resp(conn, 422, Jason.encode!(%{error: "unknown source type"}))
+              conn
+              |> put_resp_header("content-type", "application/json")
+              |> send_resp(200, Jason.encode!(merged))
+            else
+              send_resp(conn, 422, Jason.encode!(%{error: "unknown source type"}))
+            end
+
+          {idx, ""} when idx >= 0 ->
+            send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
+
+          _ ->
+            send_resp(conn, 400, Jason.encode!(%{error: "invalid index"}))
         end
 
-      {idx, ""} when idx >= 0 ->
-        send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
-
-      _ ->
-        send_resp(conn, 400, Jason.encode!(%{error: "invalid index"}))
+      {:error, _} ->
+        conn
+        |> put_resp_header("content-type", "application/json")
+        |> send_resp(403, Jason.encode!(%{error: "forbidden"}))
     end
   end
 
@@ -400,18 +416,21 @@ defmodule NervesPhotos.SettingsRouter do
     end
   end
 
-  defp render_page(s, wifi_mode) do
+  defp render_page(s, wifi_mode, current_user) do
+    csrf = Plug.CSRFProtection.get_csrf_token()
+
     """
     <!DOCTYPE html>
     <html>
     <head>
       <title>NervesPhotos Settings</title>
       <meta name="viewport" content="width=device-width, initial-scale=1">
+      <meta name="csrf-token" content="#{csrf}">
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: sans-serif; background: #f8f9fa; min-height: 100vh; }
         .page { display: flex; min-height: 100vh; }
-        .sidebar { width: 200px; background: #1e293b; flex-shrink: 0; padding-top: 24px; }
+        .sidebar { width: 200px; background: #1e293b; flex-shrink: 0; padding-top: 24px; display: flex; flex-direction: column; }
         .sidebar-title { color: #64748b; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; padding: 0 20px 12px; }
         .nav-item { display: block; padding: 10px 20px; color: #94a3b8; cursor: pointer; font-size: 14px; border-left: 3px solid transparent; }
         .nav-item.active { color: #e2e8f0; background: #334155; border-left-color: #3b82f6; }
@@ -443,7 +462,7 @@ defmodule NervesPhotos.SettingsRouter do
     </head>
     <body>
     <div class="page">
-      #{render_sidebar("display")}
+      #{render_sidebar("display", current_user)}
       <div class="content">
         #{wifi_banner(wifi_mode)}
         <div id="section-display">#{render_display_section(s)}</div>
@@ -458,7 +477,7 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
-  defp render_sidebar(active) do
+  defp render_sidebar(active, current_user) do
     items = [
       {"display", "Display"},
       {"wifi", "WiFi"},
@@ -471,11 +490,33 @@ defmodule NervesPhotos.SettingsRouter do
         "<a class=\"#{class}\" onclick=\"showSection('#{id}')\">#{label}</a>"
       end)
 
+    users_link =
+      if current_user && current_user.role == :admin do
+        ~s(<a class="nav-item" href="/settings/users">Users</a>)
+      else
+        ""
+      end
+
+    csrf = Plug.CSRFProtection.get_csrf_token()
+
+    logout_name =
+      if current_user && current_user.username do
+        " (" <> Plug.HTML.html_escape(current_user.username) <> ")"
+      else
+        ""
+      end
+
     """
     <div class="sidebar">
       <div class="sidebar-title">Settings</div>
       #{nav_links}
-      <a class="nav-item disabled">Users <span class="nav-soon">(soon)</span></a>
+      #{users_link}
+      <form method="POST" action="/logout" style="padding:10px 20px;margin-top:auto">
+        <input type="hidden" name="_csrf_token" value="#{csrf}">
+        <button type="submit" style="background:none;border:none;color:#64748b;font-size:12px;cursor:pointer;padding:0;text-align:left">
+          Sign out#{logout_name}
+        </button>
+      </form>
     </div>
     """
   end
@@ -483,10 +524,12 @@ defmodule NervesPhotos.SettingsRouter do
   defp render_display_section(s) do
     interval_s = div(Map.get(s, :slide_interval_ms, 30_000), 1_000)
     zip = Plug.HTML.html_escape(Map.get(s, :weather_zip) || "")
+    csrf = Plug.CSRFProtection.get_csrf_token()
 
     """
     <div class="section-title">Display</div>
     <form method="POST" action="/settings">
+      <input type="hidden" name="_csrf_token" value="#{csrf}">
       <label>Slide Interval (seconds)
         <input type="number" name="slide_interval_ms" min="5" value="#{interval_s}">
       </label>
@@ -500,6 +543,7 @@ defmodule NervesPhotos.SettingsRouter do
 
   defp render_wifi_section(s, wifi_mode) do
     ssid = Plug.HTML.html_escape(Map.get(s, :wifi_ssid) || "")
+    csrf = Plug.CSRFProtection.get_csrf_token()
 
     status_text =
       case wifi_mode do
@@ -512,6 +556,7 @@ defmodule NervesPhotos.SettingsRouter do
     """
     <div class="section-title">WiFi</div>
     <form method="POST" action="/settings">
+      <input type="hidden" name="_csrf_token" value="#{csrf}">
       <label>Network Name (SSID)
         <input type="text" name="wifi_ssid" value="#{ssid}">
       </label>
@@ -752,6 +797,11 @@ defmodule NervesPhotos.SettingsRouter do
     <script>
     var SECTIONS = ['display','wifi','sources','users'];
 
+    function getCsrfToken() {
+      var meta = document.querySelector('meta[name="csrf-token"]');
+      return meta ? meta.getAttribute('content') : '';
+    }
+
     function showSection(id) {
       SECTIONS.forEach(function(s) {
         var el = document.getElementById('section-' + s);
@@ -793,7 +843,10 @@ defmodule NervesPhotos.SettingsRouter do
 
     function deleteSource(idx) {
       if (!confirm('Delete this photo source?')) return;
-      fetch('/settings/photo_sources/' + idx, {method: 'DELETE'})
+      fetch('/settings/photo_sources/' + idx, {
+        method: 'DELETE',
+        headers: {'x-csrf-token': getCsrfToken()}
+      })
         .then(function(r) {
           if (r.ok) { location.reload(); }
           else { r.json().then(function(e) { alert(e.error || 'Delete failed'); }); }
@@ -808,7 +861,7 @@ defmodule NervesPhotos.SettingsRouter do
       new FormData(form).forEach(function(v, k) { data[k] = v; });
       fetch('/settings/photo_sources', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', 'x-csrf-token': getCsrfToken()},
         body: JSON.stringify(data)
       }).then(function(r) {
         if (r.ok) { location.reload(); }
@@ -823,7 +876,7 @@ defmodule NervesPhotos.SettingsRouter do
       new FormData(form).forEach(function(v, k) { if (v !== '') data[k] = v; });
       fetch('/settings/photo_sources/' + idx, {
         method: 'PUT',
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', 'x-csrf-token': getCsrfToken()},
         body: JSON.stringify(data)
       }).then(function(r) {
         if (r.ok) { location.reload(); }
