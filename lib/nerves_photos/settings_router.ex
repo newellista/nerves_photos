@@ -1,9 +1,21 @@
 defmodule NervesPhotos.SettingsRouter do
   @moduledoc false
   use Plug.Router
+  import Plug.Conn
+
+  plug(:put_secret_key_base)
+
+  plug(Plug.Session,
+    store: :ets,
+    key: "_nerves_photos_session",
+    signing_salt: "nerves_photos_sess",
+    table: :nerves_photos_sessions
+  )
 
   plug(:match)
   plug(Plug.Parsers, parsers: [:urlencoded, :json], json_decoder: Jason)
+  plug(Plug.CSRFProtection)
+  plug(NervesPhotos.AuthPlug)
   plug(:dispatch)
 
   @valid_source_types ~w(immich google_photos)
@@ -700,5 +712,9 @@ defmodule NervesPhotos.SettingsRouter do
         v != nil,
         into: %{},
         do: {String.to_existing_atom(k), v}
+  end
+
+  defp put_secret_key_base(conn, _opts) do
+    put_in(conn.secret_key_base, Application.get_env(:nerves_photos, :secret_key_base))
   end
 end

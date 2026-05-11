@@ -5,6 +5,7 @@ defmodule NervesPhotos.Application do
 
   @impl true
   def start(_type, _args) do
+    :ets.new(:nerves_photos_sessions, [:named_table, :public, read_concurrency: true])
     children = target_children()
     opts = [strategy: :one_for_one, name: NervesPhotos.Supervisor]
     Supervisor.start_link(children, opts)
@@ -18,6 +19,7 @@ defmodule NervesPhotos.Application do
       defp target_children do
         [
           NervesPhotos.SettingsStore,
+          NervesPhotos.UserStore,
           NervesPhotos.SettingsServer
         ]
       end
@@ -26,6 +28,7 @@ defmodule NervesPhotos.Application do
       defp target_children do
         core = [
           NervesPhotos.SettingsStore,
+          NervesPhotos.UserStore,
           NervesPhotos.ConnectivityMonitor,
           NervesPhotos.SettingsServer,
           NervesPhotos.PhotoQueue,
