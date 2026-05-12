@@ -159,7 +159,7 @@ plug NervesPhotos.AuthPlug
 plug :dispatch
 ```
 
-`signing_salt` is a static string committed to the codebase — not secret, just unique to the app. The ETS session store requires `conn.secret_key_base` to be set; a `put_secret_key_base/2` plug reads it from `Application.get_env(:nerves_photos, :secret_key_base)`, configured in `config/config.exs`.
+`signing_salt` is a static string committed to the codebase — not secret, just unique to the app. The ETS session store requires `conn.secret_key_base` to be set; a `put_secret_key_base/2` plug reads it from `Application.get_env(:nerves_photos, :secret_key_base)`. In production, `config/runtime.exs` generates a unique key on first boot and persists it to `/data/nerves_photos/secret_key_base`; dev/test fall back to a hardcoded default in `config/config.exs`.
 
 CSRF token injected into all state-changing forms via `Plug.CSRFProtection.get_csrf_token/0` as a hidden input.
 
