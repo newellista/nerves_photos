@@ -1,13 +1,29 @@
 defmodule NervesPhotos.SettingsRouter do
   @moduledoc false
   use Plug.Router
+  import Plug.Conn
+
+  plug(:put_secret_key_base)
+
+  plug(Plug.Session,
+    store: :ets,
+    key: "_nerves_photos_session",
+    signing_salt: "nerves_photos_sess",
+    table: :nerves_photos_sessions
+  )
 
   plug(:match)
   plug(Plug.Parsers, parsers: [:urlencoded, :json], json_decoder: Jason)
+  plug(Plug.CSRFProtection)
+  plug(NervesPhotos.AuthPlug)
   plug(:dispatch)
 
   @valid_source_types ~w(immich google_photos)
   @source_param_keys ~w(type url api_key album_id share_url)
+
+  match("/login", do: NervesPhotos.AuthRouter.call(conn, []))
+  match("/logout", do: NervesPhotos.AuthRouter.call(conn, []))
+  forward("/settings/users", to: NervesPhotos.AuthRouter)
 
   get "/settings" do
     settings = NervesPhotos.SettingsStore.all()
@@ -17,7 +33,7 @@ defmodule NervesPhotos.SettingsRouter do
         GenServer.call(pid, :mode)
       end
 
-    send_resp(conn, 200, render_page(settings, wifi_mode))
+    send_resp(conn, 200, render_page(settings, wifi_mode, conn.assigns.current_user))
   end
 
   post "/settings" do
@@ -82,98 +98,68 @@ defmodule NervesPhotos.SettingsRouter do
   end
 
   delete "/settings/photo_sources/:index" do
-    sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
+    case Bodyguard.permit(NervesPhotos.Policy, :delete_source, conn.assigns.current_user) do
+      :ok ->
+        sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
 
-    case Integer.parse(conn.params["index"]) do
-      {idx, ""} when idx >= 0 and idx < length(sources) ->
-        updated = List.delete_at(sources, idx)
-        NervesPhotos.SettingsStore.put(:photo_sources, updated)
+        case Integer.parse(conn.params["index"]) do
+          {idx, ""} when idx >= 0 and idx < length(sources) ->
+            updated = List.delete_at(sources, idx)
+            NervesPhotos.SettingsStore.put(:photo_sources, updated)
 
+            conn
+            |> put_resp_header("content-type", "application/json")
+            |> send_resp(200, Jason.encode!(updated))
+
+          {idx, ""} when idx >= 0 ->
+            send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
+
+          _ ->
+            send_resp(conn, 400, Jason.encode!(%{error: "invalid index"}))
+        end
+
+      {:error, _} ->
         conn
         |> put_resp_header("content-type", "application/json")
-        |> send_resp(200, Jason.encode!(updated))
-
-      {idx, ""} when idx >= 0 ->
-        send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
-
-      _ ->
-        send_resp(conn, 400, Jason.encode!(%{error: "invalid index"}))
+        |> send_resp(403, Jason.encode!(%{error: "forbidden"}))
     end
   end
 
   put "/settings/photo_sources/:index" do
-    sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
-    source = atomize_source_params(conn.body_params)
+    case Bodyguard.permit(NervesPhotos.Policy, :manage_sources, conn.assigns.current_user) do
+      :ok ->
+        sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
+        source = atomize_source_params(conn.body_params)
 
-    case Integer.parse(conn.params["index"]) do
-      {idx, ""} when idx >= 0 and idx < length(sources) ->
-        if source[:type] in @valid_source_types do
-          merged = Map.merge(Enum.at(sources, idx), source)
-          updated = List.replace_at(sources, idx, merged)
-          NervesPhotos.SettingsStore.put(:photo_sources, updated)
+        case Integer.parse(conn.params["index"]) do
+          {idx, ""} when idx >= 0 and idx < length(sources) ->
+            if source[:type] in @valid_source_types do
+              merged = Map.merge(Enum.at(sources, idx), source)
+              updated = List.replace_at(sources, idx, merged)
+              NervesPhotos.SettingsStore.put(:photo_sources, updated)
 
-          conn
-          |> put_resp_header("content-type", "application/json")
-          |> send_resp(200, Jason.encode!(merged))
-        else
-          send_resp(conn, 422, Jason.encode!(%{error: "unknown source type"}))
-        end
+              conn
+              |> put_resp_header("content-type", "application/json")
+              |> send_resp(200, Jason.encode!(merged))
+            else
+              send_resp(conn, 422, Jason.encode!(%{error: "unknown source type"}))
+            end
 
-      {idx, ""} when idx >= 0 ->
-        send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
-
-      _ ->
-        send_resp(conn, 400, Jason.encode!(%{error: "invalid index"}))
-    end
-  end
-
-  get "/current/photo" do
-    case safe_call(NervesPhotos.PhotoQueue, :current, nil) do
-      {module, source_id, config, _meta} ->
-        case module.fetch_image(source_id, config) do
-          {:ok, body} when is_binary(body) ->
-            conn
-            |> put_resp_header("content-type", "image/jpeg")
-            |> send_resp(200, body)
+          {idx, ""} when idx >= 0 ->
+            send_resp(conn, 404, Jason.encode!(%{error: "index out of bounds"}))
 
           _ ->
-            send_resp(conn, 503, "photo fetch failed")
+            send_resp(conn, 400, Jason.encode!(%{error: "invalid index"}))
         end
 
-      _ ->
-        send_resp(conn, 503, "no photo available")
+      {:error, _} ->
+        conn
+        |> put_resp_header("content-type", "application/json")
+        |> send_resp(403, Jason.encode!(%{error: "forbidden"}))
     end
   end
 
-  get "/current" do
-    interval_ms = NervesPhotos.SettingsStore.get(:slide_interval_ms) || 30_000
-    show_debug = Application.get_env(:nerves_photos, :show_debug, false)
-
-    weather = safe_call(NervesPhotos.WeatherFetcher, :current, :unavailable)
-    photo_current = safe_call(NervesPhotos.PhotoQueue, :current, :loading)
-    {current_pos, total} = safe_call(NervesPhotos.PhotoQueue, :queue_position, {0, 0})
-
-    {has_photo, metadata, scene_status} =
-      case photo_current do
-        {_module, _id, _config, meta} -> {true, meta, :ok}
-        status -> {false, %{date: nil, location: nil}, status}
-      end
-
-    send_resp(
-      conn,
-      200,
-      render_current(%{
-        has_photo: has_photo,
-        metadata: metadata,
-        scene_status: scene_status,
-        weather: weather,
-        interval_ms: interval_ms,
-        show_debug: show_debug,
-        current_pos: current_pos,
-        total: total
-      })
-    )
-  end
+  forward("/current", to: NervesPhotos.CurrentRouter)
 
   match _ do
     send_resp(conn, 404, "not found")
@@ -194,151 +180,21 @@ defmodule NervesPhotos.SettingsRouter do
   defp wifi_banner(:client), do: "<div class=\"banner banner-ok\">WiFi connected.</div>"
   defp wifi_banner(_), do: ""
 
-  defp render_current(%{
-         has_photo: has_photo,
-         metadata: metadata,
-         scene_status: scene_status,
-         weather: weather,
-         interval_ms: interval_ms,
-         show_debug: show_debug,
-         current_pos: current_pos,
-         total: total
-       }) do
-    """
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>NervesPhotos &mdash; Current</title>
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: black; width: 100vw; height: 100vh; overflow: hidden; }
-        #scene { position: relative; width: 100%; height: 100%; }
-        #photo { position: absolute; width: 100%; height: 100%; object-fit: contain; }
-        .overlay { position: absolute; }
-        #metadata {
-          bottom: 8px; left: 16px;
-          width: 400px; height: 70px;
-          background: rgba(0,0,0,0.55); padding: 12px 8px;
-        }
-        .meta-date { color: white; font-size: 18px; font-family: sans-serif; }
-        .meta-location { color: rgba(255,255,255,0.71); font-size: 15px;
-                         font-family: sans-serif; margin-top: 2px; }
-        #weather {
-          bottom: 8px; right: 16px;
-          width: 184px; height: 70px;
-          background: rgba(0,0,0,0.55); padding: 12px;
-        }
-        .weather-temp { color: white; font-size: 20px; font-family: sans-serif; }
-        .weather-cond { color: rgba(255,255,255,0.71); font-size: 14px;
-                        font-family: sans-serif; margin-top: 4px; }
-        #reconnecting {
-          top: 16px; left: 50%; transform: translateX(-50%);
-          background: rgba(0,0,0,0.63); color: rgb(255,204,68);
-          font-size: 16px; font-family: sans-serif;
-          padding: 7px 16px; border-radius: 15px; white-space: nowrap;
-        }
-        .centered-msg {
-          top: 50%; left: 50%; transform: translate(-50%,-50%);
-          background: rgba(0,0,0,0.63); color: white;
-          font-size: 16px; font-family: sans-serif;
-          padding: 9px 16px; border-radius: 8px; white-space: nowrap;
-        }
-        #debug {
-          bottom: 8px; left: 50%; transform: translateX(-50%);
-          width: 80px; height: 28px;
-          background: rgba(0,0,0,0.63); color: white;
-          font-size: 16px; font-family: sans-serif;
-          border-radius: 6px; display: flex; align-items: center; justify-content: center;
-        }
-      </style>
-      <script>setTimeout(() => location.reload(), #{interval_ms})</script>
-    </head>
-    <body>
-    <div id="scene">
-      #{if has_photo, do: ~s(<img id="photo" src="/current/photo" alt="">), else: ""}
-      #{render_metadata_overlay(metadata)}
-      #{render_weather_overlay(weather)}
-      #{render_scene_status(scene_status)}
-      #{if show_debug, do: ~s(<div id="debug" class="overlay">#{current_pos}/#{total}</div>), else: ""}
-    </div>
-    </body>
-    </html>
-    """
-  end
+  defp render_page(s, wifi_mode, current_user) do
+    csrf = Plug.CSRFProtection.get_csrf_token()
 
-  defp render_metadata_overlay(meta) do
-    date_html =
-      if meta[:date],
-        do: ~s(<div class="meta-date">#{format_photo_date(meta[:date])}</div>),
-        else: ""
-
-    loc_html =
-      if meta[:location],
-        do: ~s(<div class="meta-location">#{Plug.HTML.html_escape(meta[:location])}</div>),
-        else: ""
-
-    if date_html == "" and loc_html == "" do
-      ""
-    else
-      ~s(<div id="metadata" class="overlay">#{date_html}#{loc_html}</div>)
-    end
-  end
-
-  defp render_weather_overlay(:unavailable) do
-    ~s(<div id="weather" class="overlay"><div class="weather-cond">No weather data</div></div>)
-  end
-
-  defp render_weather_overlay({:ok, %{temp_f: temp, condition: condition}}) do
-    ~s(<div id="weather" class="overlay"><div class="weather-temp">#{round(temp)}°F</div><div class="weather-cond">#{Plug.HTML.html_escape(condition)}</div></div>)
-  end
-
-  defp render_scene_status(:ok), do: ""
-
-  defp render_scene_status(:disconnected) do
-    ~s(<div id="reconnecting" class="overlay">Reconnecting...</div>)
-  end
-
-  defp render_scene_status(:loading) do
-    ~s(<div class="centered-msg overlay">Loading...</div>)
-  end
-
-  defp render_scene_status(:empty) do
-    ~s(<div class="centered-msg overlay">No photos found in album</div>)
-  end
-
-  defp render_scene_status(:not_configured) do
-    ~s(<div class="centered-msg overlay">Not configured</div>)
-  end
-
-  defp format_photo_date(date), do: Calendar.strftime(date, "%B %-d, %Y")
-
-  defp safe_call(name, msg, default) do
-    case Process.whereis(name) do
-      nil ->
-        default
-
-      pid ->
-        try do
-          GenServer.call(pid, msg, 2_000)
-        catch
-          :exit, _ -> default
-        end
-    end
-  end
-
-  defp render_page(s, wifi_mode) do
     """
     <!DOCTYPE html>
     <html>
     <head>
       <title>NervesPhotos Settings</title>
       <meta name="viewport" content="width=device-width, initial-scale=1">
+      <meta name="csrf-token" content="#{csrf}">
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: sans-serif; background: #f8f9fa; min-height: 100vh; }
         .page { display: flex; min-height: 100vh; }
-        .sidebar { width: 200px; background: #1e293b; flex-shrink: 0; padding-top: 24px; }
+        .sidebar { width: 200px; background: #1e293b; flex-shrink: 0; padding-top: 24px; display: flex; flex-direction: column; }
         .sidebar-title { color: #64748b; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; padding: 0 20px 12px; }
         .nav-item { display: block; padding: 10px 20px; color: #94a3b8; cursor: pointer; font-size: 14px; border-left: 3px solid transparent; }
         .nav-item.active { color: #e2e8f0; background: #334155; border-left-color: #3b82f6; }
@@ -370,13 +226,13 @@ defmodule NervesPhotos.SettingsRouter do
     </head>
     <body>
     <div class="page">
-      #{render_sidebar("display")}
+      #{render_sidebar("display", current_user)}
       <div class="content">
         #{wifi_banner(wifi_mode)}
         <div id="section-display">#{render_display_section(s)}</div>
         <div id="section-wifi" style="display:none">#{render_wifi_section(s, wifi_mode)}</div>
         <div id="section-sources" style="display:none">#{render_sources_section(s)}</div>
-        <div id="section-users" style="display:none">#{render_users_placeholder()}</div>
+        <div id="section-users" style="display:none"></div>
       </div>
     </div>
     #{render_settings_js()}
@@ -385,7 +241,7 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
-  defp render_sidebar(active) do
+  def render_sidebar(active, current_user, kind \\ :settings) do
     items = [
       {"display", "Display"},
       {"wifi", "WiFi"},
@@ -395,14 +251,40 @@ defmodule NervesPhotos.SettingsRouter do
     nav_links =
       Enum.map_join(items, "\n", fn {id, label} ->
         class = if id == active, do: "nav-item active", else: "nav-item"
-        "<a class=\"#{class}\" onclick=\"showSection('#{id}')\">#{label}</a>"
+
+        if kind == :settings do
+          "<a class=\"#{class}\" onclick=\"showSection('#{id}')\">#{label}</a>"
+        else
+          "<a class=\"#{class}\" href=\"/settings\">#{label}</a>"
+        end
       end)
+
+    users_link =
+      if current_user && current_user.role == :admin do
+        class = if active == "users", do: "nav-item active", else: "nav-item"
+        ~s(<a class="#{class}" href="/settings/users">Users</a>)
+      else
+        ""
+      end
+
+    csrf = Plug.CSRFProtection.get_csrf_token()
+
+    logout_name =
+      if current_user && current_user.username,
+        do: " (#{Plug.HTML.html_escape(current_user.username)})",
+        else: ""
 
     """
     <div class="sidebar">
       <div class="sidebar-title">Settings</div>
       #{nav_links}
-      <a class="nav-item disabled">Users <span class="nav-soon">(soon)</span></a>
+      #{users_link}
+      <form method="POST" action="/logout" style="padding:10px 20px;margin-top:auto">
+        <input type="hidden" name="_csrf_token" value="#{csrf}">
+        <button type="submit" style="background:none;border:none;color:#64748b;font-size:12px;cursor:pointer;padding:0;text-align:left">
+          Sign out#{logout_name}
+        </button>
+      </form>
     </div>
     """
   end
@@ -410,10 +292,12 @@ defmodule NervesPhotos.SettingsRouter do
   defp render_display_section(s) do
     interval_s = div(Map.get(s, :slide_interval_ms, 30_000), 1_000)
     zip = Plug.HTML.html_escape(Map.get(s, :weather_zip) || "")
+    csrf = Plug.CSRFProtection.get_csrf_token()
 
     """
     <div class="section-title">Display</div>
     <form method="POST" action="/settings">
+      <input type="hidden" name="_csrf_token" value="#{csrf}">
       <label>Slide Interval (seconds)
         <input type="number" name="slide_interval_ms" min="5" value="#{interval_s}">
       </label>
@@ -427,6 +311,7 @@ defmodule NervesPhotos.SettingsRouter do
 
   defp render_wifi_section(s, wifi_mode) do
     ssid = Plug.HTML.html_escape(Map.get(s, :wifi_ssid) || "")
+    csrf = Plug.CSRFProtection.get_csrf_token()
 
     status_text =
       case wifi_mode do
@@ -439,6 +324,7 @@ defmodule NervesPhotos.SettingsRouter do
     """
     <div class="section-title">WiFi</div>
     <form method="POST" action="/settings">
+      <input type="hidden" name="_csrf_token" value="#{csrf}">
       <label>Network Name (SSID)
         <input type="text" name="wifi_ssid" value="#{ssid}">
       </label>
@@ -451,44 +337,46 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
+  defp render_source_row({source, idx}) do
+    {type_label, type_class, desc} =
+      case source[:type] do
+        "immich" ->
+          host = URI.parse(source[:url] || "").host || source[:url] || ""
+          {"Immich", "source-type-immich", Plug.HTML.html_escape(host)}
+
+        "google_photos" ->
+          {"Google Photos", "source-type-google", "Shared album"}
+
+        other ->
+          {Plug.HTML.html_escape(other || ""), "", ""}
+      end
+
+    """
+    <div class="source-row" id="source-row-#{idx}">
+      <div class="source-header">
+        <div>
+          <span class="source-type #{type_class}">#{type_label}</span>
+          <span class="source-desc">#{desc}</span>
+        </div>
+        <div class="source-actions">
+          <button class="btn-secondary" type="button" onclick="toggleEdit(#{idx})">Edit</button>
+          <button class="btn-danger" type="button" onclick="deleteSource(#{idx})">Delete</button>
+        </div>
+      </div>
+      <div id="edit-form-#{idx}" style="display:none" class="inline-form">
+        #{render_edit_form(source, idx)}
+      </div>
+    </div>
+    """
+  end
+
   defp render_sources_section(s) do
     sources = Map.get(s, :photo_sources) || []
 
     source_rows =
       sources
       |> Enum.with_index()
-      |> Enum.map_join("\n", fn {source, idx} ->
-        {type_label, type_class, desc} =
-          case source[:type] do
-            "immich" ->
-              host = URI.parse(source[:url] || "").host || source[:url] || ""
-              {"Immich", "source-type-immich", Plug.HTML.html_escape(host)}
-
-            "google_photos" ->
-              {"Google Photos", "source-type-google", "Shared album"}
-
-            other ->
-              {Plug.HTML.html_escape(other || ""), "", ""}
-          end
-
-        """
-        <div class="source-row" id="source-row-#{idx}">
-          <div class="source-header">
-            <div>
-              <span class="source-type #{type_class}">#{type_label}</span>
-              <span class="source-desc">#{desc}</span>
-            </div>
-            <div class="source-actions">
-              <button class="btn-secondary" type="button" onclick="toggleEdit(#{idx})">Edit</button>
-              <button class="btn-danger" type="button" onclick="deleteSource(#{idx})">Delete</button>
-            </div>
-          </div>
-          <div id="edit-form-#{idx}" style="display:none" class="inline-form">
-            #{render_edit_form(source, idx)}
-          </div>
-        </div>
-        """
-      end)
+      |> Enum.map_join("\n", &render_source_row/1)
 
     empty_msg =
       if sources == [],
@@ -600,17 +488,15 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
-  defp render_users_placeholder do
-    """
-    <div class="section-title" style="color:#94a3b8">Users</div>
-    <p style="color:#94a3b8;font-size:14px">Coming soon. User management will be added in a future release.</p>
-    """
-  end
-
   defp render_settings_js do
     """
     <script>
     var SECTIONS = ['display','wifi','sources','users'];
+
+    function getCsrfToken() {
+      var meta = document.querySelector('meta[name="csrf-token"]');
+      return meta ? meta.getAttribute('content') : '';
+    }
 
     function showSection(id) {
       SECTIONS.forEach(function(s) {
@@ -653,7 +539,10 @@ defmodule NervesPhotos.SettingsRouter do
 
     function deleteSource(idx) {
       if (!confirm('Delete this photo source?')) return;
-      fetch('/settings/photo_sources/' + idx, {method: 'DELETE'})
+      fetch('/settings/photo_sources/' + idx, {
+        method: 'DELETE',
+        headers: {'x-csrf-token': getCsrfToken()}
+      })
         .then(function(r) {
           if (r.ok) { location.reload(); }
           else { r.json().then(function(e) { alert(e.error || 'Delete failed'); }); }
@@ -668,7 +557,7 @@ defmodule NervesPhotos.SettingsRouter do
       new FormData(form).forEach(function(v, k) { data[k] = v; });
       fetch('/settings/photo_sources', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', 'x-csrf-token': getCsrfToken()},
         body: JSON.stringify(data)
       }).then(function(r) {
         if (r.ok) { location.reload(); }
@@ -683,7 +572,7 @@ defmodule NervesPhotos.SettingsRouter do
       new FormData(form).forEach(function(v, k) { if (v !== '') data[k] = v; });
       fetch('/settings/photo_sources/' + idx, {
         method: 'PUT',
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', 'x-csrf-token': getCsrfToken()},
         body: JSON.stringify(data)
       }).then(function(r) {
         if (r.ok) { location.reload(); }
@@ -700,5 +589,9 @@ defmodule NervesPhotos.SettingsRouter do
         v != nil,
         into: %{},
         do: {String.to_existing_atom(k), v}
+  end
+
+  defp put_secret_key_base(conn, _opts) do
+    put_in(conn.secret_key_base, Application.get_env(:nerves_photos, :secret_key_base))
   end
 end

@@ -27,6 +27,11 @@ config :nerves_photos, :viewport, %{
   ]
 }
 
+# Dev/test fallback only. Production releases override this via config/runtime.exs,
+# which generates a unique key on first boot and persists it to /data.
+config :nerves_photos,
+  secret_key_base: "nerves_photos_default_secret_key_base_change_before_shipping_xxxxxxxxxxx"
+
 if Mix.target() == :host do
   import_config "host.exs"
 else
