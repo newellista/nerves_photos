@@ -14,6 +14,11 @@ defmodule NervesPhotos.Component.WeatherOverlay do
     {:ok, push_graph(scene, build_graph(params))}
   end
 
+  @impl Scenic.Scene
+  def handle_cast({:update_scene, params}, scene) do
+    {:noreply, push_graph(scene, build_graph(params))}
+  end
+
   defp build_graph(%{weather: :unavailable, width: width, height: height}) do
     x = width - 200
     y = height - 78

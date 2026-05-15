@@ -14,6 +14,11 @@ defmodule NervesPhotos.Component.MetadataOverlay do
     {:ok, push_graph(scene, build_graph(params))}
   end
 
+  @impl Scenic.Scene
+  def handle_cast({:update_scene, params}, scene) do
+    {:noreply, push_graph(scene, build_graph(params))}
+  end
+
   defp build_graph(%{date: nil, location: nil}), do: Graph.build()
 
   defp build_graph(%{date: date, location: location, height: height}) do
