@@ -18,7 +18,7 @@ defmodule NervesPhotos.Component.WeatherOverlay do
     x = width - 200
     y = height - 78
 
-    Graph.build()
+    Graph.build(font: :roboto)
     |> rect({184, 70}, fill: {:color_rgba, {0, 0, 0, 140}}, translate: {x, y})
     |> SickSun.add_to_graph(%{translate: {x + 8, y + 14}}, id: :sick_sun)
     |> text("No weather data",
@@ -37,7 +37,7 @@ defmodule NervesPhotos.Component.WeatherOverlay do
     y = height - 78
     temp_str = "#{round(temp)}°F"
 
-    Graph.build()
+    Graph.build(font: :roboto)
     |> rect({184, 70}, fill: {:color_rgba, {0, 0, 0, 140}}, translate: {x, y})
     |> text(temp_str, fill: :white, font_size: 20, translate: {x + 12, y + 34})
     |> text(condition,

@@ -18,6 +18,8 @@ config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
 
 config :nerves, source_date_epoch: "1777414603"
 
+config :scenic, :assets, module: NervesPhotos.Assets
+
 config :nerves_photos, :viewport, %{
   name: :main_viewport,
   size: {1920, 1080},

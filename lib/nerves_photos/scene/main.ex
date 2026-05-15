@@ -14,9 +14,9 @@ defmodule NervesPhotos.Scene.Main do
   @fade_interval_ms 16
 
   @impl Scenic.Scene
-  def init(scene, _params, opts) do
-    viewport = opts[:viewport]
-    {:ok, %{size: {width, height}}} = Scenic.ViewPort.info(viewport)
+  def init(scene, _params, _opts) do
+    Process.register(self(), __MODULE__)
+    {:ok, %{size: {width, height}}} = Scenic.ViewPort.info(scene.viewport)
 
     graph =
       Graph.build(font: :roboto, font_size: 20)

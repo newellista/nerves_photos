@@ -106,7 +106,7 @@ config :nerves_photos,
   slide_interval_ms:
     System.get_env("SLIDE_INTERVAL_MS", "30000") |> String.trim() |> String.to_integer(),
   show_debug: System.get_env("SHOW_DEBUG", "false") == "true",
-  headless_mode: System.get_env("HEADLESS_MODE", "true") == "true"
+  headless_mode: System.get_env("HEADLESS_MODE", "false") == "true"
 
 # Import target specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

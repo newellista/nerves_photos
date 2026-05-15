@@ -21,25 +21,44 @@ defmodule NervesPhotos.ImageLoader do
 
   @impl true
   def init(opts) do
-    {:ok, %{put_fn: opts[:put_fn] || (&stream_put/2)}}
+    {:ok, %{put_fn: opts[:put_fn] || (&stream_put/2), generation: 0}}
   end
 
   @impl true
   def handle_cast({:load, asset, reply_to, stream_key}, state) do
-    Task.start(fn -> do_load(asset, reply_to, stream_key, state) end)
-    {:noreply, state}
+    gen = state.generation + 1
+    loader = self()
+    Task.start(fn -> do_load(asset, reply_to, stream_key, state, gen, loader) end)
+    {:noreply, %{state | generation: gen}}
   end
 
-  defp do_load({module, source_id, config, _meta} = asset, reply_to, stream_key, state) do
+  @impl true
+  def handle_call({:current_generation}, _from, state) do
+    {:reply, state.generation, state}
+  end
+
+  defp do_load(
+         {module, source_id, config, _meta} = asset,
+         reply_to,
+         stream_key,
+         state,
+         gen,
+         loader
+       ) do
     case module.fetch_image(source_id, config) do
       {:ok, image_bytes} ->
-        case state.put_fn.(stream_key, image_bytes) do
-          :ok ->
-            send(reply_to, {:image_loaded, stream_key})
+        if GenServer.call(loader, {:current_generation}) == gen do
+          case state.put_fn.(stream_key, image_bytes) do
+            :ok ->
+              send(reply_to, {:image_loaded, stream_key})
 
-          {:error, reason} ->
-            Logger.warning("ImageLoader: stream put failed for #{source_id}: #{inspect(reason)}")
-            send(reply_to, {:image_load_error, asset})
+            {:error, reason} ->
+              Logger.warning(
+                "ImageLoader: stream put failed for #{source_id}: #{inspect(reason)}"
+              )
+
+              send(reply_to, {:image_load_error, asset})
+          end
         end
 
       {:error, reason} ->
