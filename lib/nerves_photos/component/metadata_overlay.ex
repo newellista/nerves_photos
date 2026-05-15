@@ -21,7 +21,7 @@ defmodule NervesPhotos.Component.MetadataOverlay do
       [format_date(date), location]
       |> Enum.reject(&is_nil/1)
 
-    Graph.build()
+    Graph.build(font: :roboto)
     |> rect({400, 70}, fill: {:color_rgba, {0, 0, 0, 140}}, translate: {16, height - 78})
     |> draw_lines(lines, height)
   end

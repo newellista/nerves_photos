@@ -12,6 +12,8 @@ defmodule NervesPhotos.SettingsRouter do
     table: :nerves_photos_sessions
   )
 
+  plug(:fetch_session)
+
   plug(:match)
   plug(Plug.Parsers, parsers: [:urlencoded, :json], json_decoder: Jason)
   plug(Plug.CSRFProtection)
