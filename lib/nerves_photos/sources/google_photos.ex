@@ -5,7 +5,7 @@ defmodule NervesPhotos.Sources.GooglePhotos do
 
   @url_regex ~r|https://lh3\.googleusercontent\.com/[^\s"'\\<>=]+|
 
-  @fetch_size "=w1920-h1080-c"
+  @fetch_size "=w1920-h1080"
 
   @impl true
   def list_assets(%{share_url: share_url} = config) do

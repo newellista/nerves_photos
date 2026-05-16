@@ -6,10 +6,10 @@ defmodule NervesPhotos.Scene.Main do
   alias NervesPhotos.Component.DebugBar
   alias NervesPhotos.Component.MetadataOverlay
   alias NervesPhotos.Component.WeatherOverlay
+  alias Scenic.Assets.Stream, as: ScenicStream
   alias Scenic.Graph
   import Scenic.Primitives
 
-  @stream_key "photo:current"
   @fade_steps 20
   @fade_interval_ms 16
 
@@ -33,7 +33,11 @@ defmodule NervesPhotos.Scene.Main do
         has_photo: false,
         transition: :idle,
         fade_step: 0,
-        fade_opacity: 0.0
+        fade_opacity: 0.0,
+        current_stream_key: nil,
+        prev_stream_key: nil,
+        photo_width: 0,
+        photo_height: 0
       )
       |> push_graph(graph)
 
@@ -63,9 +67,20 @@ defmodule NervesPhotos.Scene.Main do
 
   def handle_info({:slide_timer, :next_photo}, scene), do: {:noreply, scene}
 
-  def handle_info({:image_loaded, _key}, scene) do
+  def handle_info({:image_loaded, key, width, height}, scene) do
+    if scene.assigns.prev_stream_key, do: ScenicStream.delete(scene.assigns.prev_stream_key)
+
     scene =
-      assign(scene, disconnected: false, has_photo: true, transition: :fading_out, fade_step: 0)
+      assign(scene,
+        disconnected: false,
+        has_photo: true,
+        transition: :fading_out,
+        fade_step: 0,
+        prev_stream_key: scene.assigns.current_stream_key,
+        current_stream_key: key,
+        photo_width: width,
+        photo_height: height
+      )
 
     send(self(), :transition_tick)
     {:noreply, scene}
@@ -119,7 +134,10 @@ defmodule NervesPhotos.Scene.Main do
       disconnected: disconnected,
       empty_album: empty_album,
       has_photo: has_photo,
-      fade_opacity: fade_opacity
+      fade_opacity: fade_opacity,
+      current_stream_key: current_stream_key,
+      photo_width: photo_width,
+      photo_height: photo_height
     } = scene.assigns
 
     weather = NervesPhotos.WeatherFetcher.current()
@@ -133,7 +151,14 @@ defmodule NervesPhotos.Scene.Main do
       |> rect({width, height}, fill: :black, id: :background)
       |> then(fn g ->
         if has_photo do
-          rect(g, {width, height}, fill: {:stream, @stream_key}, id: :photo)
+          photo_x = div(width - photo_width, 2)
+          photo_y = div(height - photo_height, 2)
+
+          rect(g, {photo_width, photo_height},
+            fill: {:stream, current_stream_key},
+            translate: {photo_x, photo_y},
+            id: :photo
+          )
         else
           g
         end

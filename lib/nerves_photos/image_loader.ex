@@ -5,18 +5,13 @@ defmodule NervesPhotos.ImageLoader do
 
   alias Scenic.Assets.Stream, as: ScenicStream
 
-  @stream_key "photo:current"
-
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  def load(
-        {_module, _source_id, _config, _meta} = asset,
-        reply_to \\ nil,
-        stream_key \\ @stream_key
-      ) do
-    GenServer.cast(__MODULE__, {:load, asset, reply_to || self(), stream_key})
+  def load({_module, source_id, _config, _meta} = asset, reply_to \\ nil, stream_key \\ nil) do
+    key = stream_key || source_id
+    GenServer.cast(__MODULE__, {:load, asset, reply_to || self(), key})
   end
 
   @impl true
@@ -49,8 +44,8 @@ defmodule NervesPhotos.ImageLoader do
       {:ok, image_bytes} ->
         if GenServer.call(loader, {:current_generation}) == gen do
           case state.put_fn.(stream_key, image_bytes) do
-            :ok ->
-              send(reply_to, {:image_loaded, stream_key})
+            {:ok, width, height} ->
+              send(reply_to, {:image_loaded, stream_key, width, height})
 
             {:error, reason} ->
               Logger.warning(
@@ -69,8 +64,14 @@ defmodule NervesPhotos.ImageLoader do
 
   defp stream_put(stream_key, image_bytes) do
     case ScenicStream.Image.from_binary(image_bytes) do
-      {:ok, img} -> ScenicStream.put(stream_key, img)
-      {:error, :invalid} -> {:error, :invalid_image}
+      {:ok, {_, {width, height, _}, _} = img} ->
+        case ScenicStream.put(stream_key, img) do
+          :ok -> {:ok, width, height}
+          {:error, _} = err -> err
+        end
+
+      {:error, :invalid} ->
+        {:error, :invalid_image}
     end
   end
 end
