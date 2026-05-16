@@ -7,3 +7,14 @@
 +	LDFLAGS += -lGLESv2 -lEGL -lm -ldrm -lgbm
  	CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter -pedantic
  	CFLAGS += -std=gnu99
+--- a/c_src/image.c
++++ b/c_src/image.c
+@@ -22,7 +22,7 @@ limitations under the License.
+ #define HASH_ID(id) tommy_hash_u32( 0, id.p_data, id.size )
+
+
+-#define REPEAT_XY   (NVG_IMAGE_REPEATX | NVG_IMAGE_REPEATY)
++#define REPEAT_XY   0
+
+
+ tommy_hashlin   images = {0};

@@ -33,7 +33,7 @@ defmodule NervesPhotos.IntegrationTest do
 
     start_supervised!({FakeWeather, {:ok, %{temp_f: 72.0, condition: "Sunny", icon_code: 2}}})
 
-    start_supervised!({NervesPhotos.ImageLoader, put_fn: fn _key, _bytes -> :ok end})
+    start_supervised!({NervesPhotos.ImageLoader, put_fn: fn _key, _bytes -> {:ok, 100, 100} end})
 
     start_supervised!({NervesPhotos.SlideTimer, interval_ms: 50, target: self()})
 
@@ -51,7 +51,7 @@ defmodule NervesPhotos.IntegrationTest do
     assert is_binary(location)
 
     NervesPhotos.ImageLoader.load(result, self())
-    assert_receive {:image_loaded, "photo:current"}, 500
+    assert_receive {:image_loaded, ^asset_id, 100, 100}, 500
   end
 
   test "PhotoQueue.queue_position tracks advances" do

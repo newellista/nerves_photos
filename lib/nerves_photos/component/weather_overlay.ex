@@ -2,7 +2,6 @@ defmodule NervesPhotos.Component.WeatherOverlay do
   @moduledoc false
   use Scenic.Component
   import Scenic.Primitives
-  alias NervesPhotos.Component.SickSun
   alias Scenic.Graph
 
   @impl Scenic.Component
@@ -25,7 +24,12 @@ defmodule NervesPhotos.Component.WeatherOverlay do
 
     Graph.build(font: :roboto)
     |> rect({184, 70}, fill: {:color_rgba, {0, 0, 0, 140}}, translate: {x, y})
-    |> SickSun.add_to_graph(%{translate: {x + 8, y + 14}}, id: :sick_sun)
+    |> circle(18, fill: {:color, {255, 220, 50}}, translate: {x + 26, y + 32})
+    |> line({{x + 17, y + 25}, {x + 21, y + 29}}, stroke: {2, :black})
+    |> line({{x + 21, y + 25}, {x + 17, y + 29}}, stroke: {2, :black})
+    |> line({{x + 30, y + 25}, {x + 34, y + 29}}, stroke: {2, :black})
+    |> line({{x + 34, y + 25}, {x + 30, y + 29}}, stroke: {2, :black})
+    |> line({{x + 19, y + 37}, {x + 33, y + 37}}, stroke: {2, :black})
     |> text("No weather data",
       fill: {:color_rgba, {255, 255, 255, 180}},
       font_size: 13,
