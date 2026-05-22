@@ -8,8 +8,7 @@ defmodule NervesPhotos.CairoPort do
   @timeout_render 100
 
   def start_link(opts \\ []) do
-    gen_opts = if name = opts[:name], do: [name: name], else: []
-    GenServer.start_link(__MODULE__, opts, gen_opts)
+    GenServer.start_link(__MODULE__, opts, name: opts[:name] || __MODULE__)
   end
 
   def init_display(pid \\ __MODULE__, opts \\ []) do
