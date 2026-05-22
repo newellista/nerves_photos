@@ -1,5 +1,5 @@
 defmodule NervesPhotos.CairoPortTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   import Bitwise
 
   alias NervesPhotos.CairoPort
@@ -40,23 +40,31 @@ defmodule NervesPhotos.CairoPortTest do
   end
 
   test "init_display sends correct binary and returns :ok" do
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> make_port([<<0xA0>>]) end)
+    pid =
+      start_supervised!({NervesPhotos.CairoPort, [open_port_fn: fn -> make_port([<<0xA0>>]) end]})
+
     assert :ok == CairoPort.init_display(pid, width: 1920, height: 1080, display_mode: :auto)
   end
 
   test "load_image sends correct binary and returns {:ok, {w, h}}" do
     response = <<0xA2, 0, 1920::big-16, 1080::big-16>>
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> make_port([response]) end)
+
+    pid =
+      start_supervised!({NervesPhotos.CairoPort, [open_port_fn: fn -> make_port([response]) end]})
+
     assert {:ok, {1920, 1080}} == CairoPort.load_image(pid, 0, <<0xFF, 0xD8>>)
   end
 
   test "free_slot sends correct binary and returns :ok" do
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> make_port([<<0xA0>>]) end)
+    pid =
+      start_supervised!({NervesPhotos.CairoPort, [open_port_fn: fn -> make_port([<<0xA0>>]) end]})
+
     assert :ok == CairoPort.free_slot(pid, 1)
   end
 
   test "render_frame with metadata overlay returns :ok" do
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> make_port([<<0xA0>>]) end)
+    pid =
+      start_supervised!({NervesPhotos.CairoPort, [open_port_fn: fn -> make_port([<<0xA0>>]) end]})
 
     params = %{
       transition_type: :fade_to_black,
@@ -70,25 +78,37 @@ defmodule NervesPhotos.CairoPortTest do
 
   test "get_dimensions returns {:ok, {w, h}}" do
     response = <<0xA3, 1920::big-16, 1080::big-16>>
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> make_port([response]) end)
+
+    pid =
+      start_supervised!({NervesPhotos.CairoPort, [open_port_fn: fn -> make_port([response]) end]})
+
     assert {:ok, {1920, 1080}} == CairoPort.get_dimensions(pid)
   end
 
   test "ping returns :pong" do
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> make_port([<<0xA4>>]) end)
+    pid =
+      start_supervised!({NervesPhotos.CairoPort, [open_port_fn: fn -> make_port([<<0xA4>>]) end]})
+
     assert :pong == CairoPort.ping(pid)
   end
 
   test "error response returns {:error, message}" do
     msg = "decode failed"
     response = <<0xA1, 0x03, byte_size(msg)::8, msg::binary>>
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> make_port([response]) end)
+
+    pid =
+      start_supervised!({NervesPhotos.CairoPort, [open_port_fn: fn -> make_port([response]) end]})
+
     assert {:error, "decode failed"} == CairoPort.load_image(pid, 0, <<0x00>>)
   end
 
   test "CMD_INIT binary encoding is correct" do
     test_pid = self()
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> capturing_port(test_pid) end)
+
+    pid =
+      start_supervised!(
+        {NervesPhotos.CairoPort, [open_port_fn: fn -> capturing_port(test_pid) end]}
+      )
 
     Task.start(fn ->
       CairoPort.init_display(pid, width: 1920, height: 1080, display_mode: :fbdev)
@@ -100,7 +120,11 @@ defmodule NervesPhotos.CairoPortTest do
 
   test "CMD_RENDER_FRAME binary encoding with weather overlay" do
     test_pid = self()
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> capturing_port(test_pid) end)
+
+    pid =
+      start_supervised!(
+        {NervesPhotos.CairoPort, [open_port_fn: fn -> capturing_port(test_pid) end]}
+      )
 
     params = %{
       transition_type: :none,
@@ -125,7 +149,11 @@ defmodule NervesPhotos.CairoPortTest do
 
   test "CMD_RENDER_FRAME encodes all overlay flags correctly" do
     test_pid = self()
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> capturing_port(test_pid) end)
+
+    pid =
+      start_supervised!(
+        {NervesPhotos.CairoPort, [open_port_fn: fn -> capturing_port(test_pid) end]}
+      )
 
     params = %{
       transition_type: :cross_dissolve,
@@ -157,7 +185,12 @@ defmodule NervesPhotos.CairoPortTest do
 
   test "CMD_FREE_SLOT binary encoding is correct" do
     test_pid = self()
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> capturing_port(test_pid) end)
+
+    pid =
+      start_supervised!(
+        {NervesPhotos.CairoPort, [open_port_fn: fn -> capturing_port(test_pid) end]}
+      )
+
     Task.start(fn -> CairoPort.free_slot(pid, 1) end)
     assert_receive {:captured, data}, 500
     assert <<0x03, 1>> == data
@@ -165,7 +198,12 @@ defmodule NervesPhotos.CairoPortTest do
 
   test "CMD_PING binary encoding is correct" do
     test_pid = self()
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> capturing_port(test_pid) end)
+
+    pid =
+      start_supervised!(
+        {NervesPhotos.CairoPort, [open_port_fn: fn -> capturing_port(test_pid) end]}
+      )
+
     Task.start(fn -> CairoPort.ping(pid) end)
     assert_receive {:captured, data}, 500
     assert <<0x06>> == data
@@ -173,7 +211,12 @@ defmodule NervesPhotos.CairoPortTest do
 
   test "CMD_GET_DIMENSIONS binary encoding is correct" do
     test_pid = self()
-    {:ok, pid} = CairoPort.start_link(open_port_fn: fn -> capturing_port(test_pid) end)
+
+    pid =
+      start_supervised!(
+        {NervesPhotos.CairoPort, [open_port_fn: fn -> capturing_port(test_pid) end]}
+      )
+
     Task.start(fn -> CairoPort.get_dimensions(pid) end)
     assert_receive {:captured, data}, 500
     assert <<0x05>> == data
