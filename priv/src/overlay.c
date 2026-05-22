@@ -46,7 +46,8 @@ static void draw_pill_text(cairo_t *cr, double x, double y, double w, double h,
 
 void fc_init_fonts(void) {
     FcConfig *cfg = FcInitLoadConfigAndFonts();
-    FcConfigAppFontAddFile(cfg, (FcChar8 *)"priv/fonts/Roboto-Regular.ttf");
+    FcConfigParseAndLoad(cfg, (FcChar8 *)"/app/priv/fonts/fonts.conf", FcFalse);
+    FcConfigAppFontAddFile(cfg, (FcChar8 *)"/app/priv/fonts/Roboto-Regular.ttf");
     FcConfigSetCurrent(cfg);
 }
 

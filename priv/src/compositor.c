@@ -88,7 +88,7 @@ static void handle_free_slot(const uint8_t *buf, int len) {
 
 static void handle_render_frame(const uint8_t *buf, int len) {
     if (!g_display) { write_error(ERR_NOT_INIT, "not initialized"); return; }
-    if (len < 7) { write_error(ERR_BAD_PAYLOAD, "render: short"); return; }
+    if (len < 8) { write_error(ERR_BAD_PAYLOAD, "render: short"); return; }
 
     int transition_type = buf[1];
 
@@ -99,7 +99,7 @@ static void handle_render_frame(const uint8_t *buf, int len) {
     memcpy(&t, &ti, 4);
 
     int crop_mode = buf[6];
-    uint8_t flags = (len > 7) ? buf[7] : 0;
+    uint8_t flags = buf[7];
 
     overlay_params_t overlays = {NULL, NULL, NULL, NULL, NULL, 0, 0};
 
