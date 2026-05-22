@@ -1,5 +1,5 @@
 defmodule NervesPhotos.Sources.ImmichTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias NervesPhotos.Sources.Immich
 

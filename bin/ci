@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Run the full CI suite locally: host tests + firmware cross-compilation for each target.
+#
+# Usage:
+#   bin/ci                  # host tests + firmware for all targets
+#   bin/ci host             # host tests only
+#   bin/ci firmware         # firmware builds only
+#   bin/ci firmware rpi3    # single target
+#
+# Firmware builds run natively on macOS using the Nerves darwin_arm toolchain.
+# Prerequisites: fwup and squashfs-tools must be installed (brew install fwup squashfs).
+set -euo pipefail
+
+# Resolve root from the script's own location — avoids git rev-parse which
+# behaves unexpectedly when GIT_DIR is set by git hook infrastructure.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+ALL_TARGETS="rpi3 rpi5"
+
+RUN_HOST=1
+RUN_FIRMWARE=1
+TARGETS="$ALL_TARGETS"
+
+for arg in "$@"; do
+  case "$arg" in
+    host)     RUN_FIRMWARE=0 ;;
+    firmware) RUN_HOST=0 ;;
+    rpi*)     RUN_HOST=0; TARGETS="$arg" ;;
+  esac
+done
+
+# ── Host tests ────────────────────────────────────────────────────────────────
+if [[ $RUN_HOST -eq 1 ]]; then
+  echo "▶ Host CI"
+  MIX_TARGET=host mix ci
+  echo "✓ Host CI passed"
+fi
+
+# ── Firmware builds ────────────────────────────────────────────────────────────
+if [[ $RUN_FIRMWARE -eq 1 ]]; then
+  for target in $TARGETS; do
+    echo "▶ Firmware: $target"
+    MIX_TARGET="$target" mix deps.get
+    MIX_TARGET="$target" mix firmware
+    echo "✓ Firmware $target passed"
+  done
+fi
+
+echo ""
+echo "✓ All CI checks passed"

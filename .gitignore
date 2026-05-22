@@ -11,3 +11,5 @@ erl_crash.dump
 .superpowers/
 .worktrees/
 .claude/settings.local.json
+/priv/compositor
+/priv/src/*.o

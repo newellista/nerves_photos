@@ -1,5 +1,5 @@
 defmodule NervesPhotos.IntegrationTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: false
 
   defmodule FakeImmich do
     def list_assets(_config) do
@@ -33,14 +33,12 @@ defmodule NervesPhotos.IntegrationTest do
 
     start_supervised!({FakeWeather, {:ok, %{temp_f: 72.0, condition: "Sunny", icon_code: 2}}})
 
-    start_supervised!({NervesPhotos.ImageLoader, put_fn: fn _key, _bytes -> {:ok, 100, 100} end})
-
     start_supervised!({NervesPhotos.SlideTimer, interval_ms: 50, target: self()})
 
     :ok
   end
 
-  test "SlideTimer tick drives PhotoQueue.advance and ImageLoader delivers :image_loaded" do
+  test "SlideTimer tick drives PhotoQueue.advance" do
     :sys.get_state(NervesPhotos.PhotoQueue)
 
     assert_receive {:slide_timer, :next_photo}, 300
@@ -49,9 +47,6 @@ defmodule NervesPhotos.IntegrationTest do
     assert {FakeImmich, asset_id, _config, %{date: %Date{}, location: location}} = result
     assert asset_id in ["asset-001", "asset-002"]
     assert is_binary(location)
-
-    NervesPhotos.ImageLoader.load(result, self())
-    assert_receive {:image_loaded, ^asset_id, 100, 100}, 500
   end
 
   test "PhotoQueue.queue_position tracks advances" do
@@ -75,18 +70,6 @@ defmodule NervesPhotos.IntegrationTest do
     result = NervesPhotos.PhotoQueue.advance()
     assert {FakeImmich, id, _config, _meta} = result
     assert id in ["asset-001", "asset-002"]
-  end
-
-  test "ImageLoader reports :image_load_error on fetch failure" do
-    defmodule FailSource do
-      def fetch_image(_id, _config), do: {:error, :timeout}
-    end
-
-    :sys.get_state(NervesPhotos.PhotoQueue)
-    asset = {FailSource, "bad-id", %{}, %{date: nil, location: nil}}
-
-    NervesPhotos.ImageLoader.load(asset, self())
-    assert_receive {:image_load_error, ^asset}, 500
   end
 
   test "WeatherFetcher delivers weather data" do

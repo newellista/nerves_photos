@@ -18,21 +18,15 @@ config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
 
 config :nerves, source_date_epoch: "1777414603"
 
-config :scenic, :assets, module: NervesPhotos.Assets
-
-config :nerves_photos, :viewport, %{
-  name: :main_viewport,
-  size: {1920, 1080},
-  default_scene: NervesPhotos.Scene.Main,
-  drivers: [
-    %{module: Scenic.Driver.Local}
-  ]
-}
-
 # Dev/test fallback only. Production releases override this via config/runtime.exs,
 # which generates a unique key on first boot and persists it to /data.
 config :nerves_photos,
   secret_key_base: "nerves_photos_default_secret_key_base_change_before_shipping_xxxxxxxxxxx"
+
+config :nerves_photos,
+  compositor_display_mode: :auto,
+  transition_type: :fade_to_black,
+  crop_mode: :letterbox
 
 if Mix.target() == :host do
   import_config "host.exs"

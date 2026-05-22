@@ -39,8 +39,19 @@ defmodule NervesPhotos.Application do
         if Application.get_env(:nerves_photos, :headless_mode, false) do
           core ++ [NervesPhotos.Scene.Headless]
         else
-          viewport_config = Application.get_env(:nerves_photos, :viewport)
-          core ++ [NervesPhotos.ImageLoader, {Scenic, [viewport_config]}]
+          compositor_children = [
+            NervesPhotos.CairoPort,
+            NervesPhotos.FrameCompositor
+          ]
+
+          core ++
+            [
+              {Supervisor,
+               [
+                 compositor_children,
+                 [strategy: :rest_for_one, name: NervesPhotos.CompositorSupervisor]
+               ]}
+            ]
         end
       end
   end
