@@ -11,7 +11,9 @@
 # Prerequisites: fwup and squashfs-tools must be installed (brew install fwup squashfs).
 set -euo pipefail
 
-ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
+# Resolve root from the script's own location — avoids git rev-parse which
+# behaves unexpectedly when GIT_DIR is set by git hook infrastructure.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 ALL_TARGETS="rpi3 rpi5"
