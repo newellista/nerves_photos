@@ -12,7 +12,9 @@ defmodule NervesPhotos.CairoPortTest do
     fake_pid = spawn(fn -> :ok end)
     responses_ref = :ets.new(:responses, [:ordered_set, :public])
 
-    Enum.with_index(responses, fn response, i ->
+    responses
+    |> Enum.with_index()
+    |> Enum.each(fn {response, i} ->
       :ets.insert(responses_ref, {i, response})
     end)
 

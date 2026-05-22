@@ -53,7 +53,8 @@ defmodule NervesPhotos.MixProject do
         "compile --warnings-as-errors",
         "format --check-formatted",
         "credo --strict",
-        "deps.audit",
+        # GHSA-g2wm-735q-3f56: cowlib cookie injection — no patch available upstream
+        "deps.audit --ignore-advisory-ids GHSA-g2wm-735q-3f56",
         # hex.audit is a Mix archive task and isn't pre-loaded in alias context; cmd mix spawns a child process that loads it
         "cmd mix hex.audit",
         # alias steps run in :dev env; shell wrapper forces :test so mix test compiles test modules correctly

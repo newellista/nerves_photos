@@ -1,4 +1,5 @@
 defmodule NervesPhotos.CairoPort do
+  @moduledoc false
   use GenServer
   import Bitwise
   require Logger
@@ -133,38 +134,43 @@ defmodule NervesPhotos.CairoPort do
   defp encode_crop_mode(:center_crop), do: 1
 
   defp encode_overlays(overlays) do
-    flags = 0
-    data = <<>>
+    {flags, data} = encode_metadata_overlay(overlays, 0, <<>>)
+    {flags, data} = encode_weather_overlay(overlays, flags, data)
+    {flags, data} = encode_debug_overlay(overlays, flags, data)
+    {encode_status_flags(overlays, flags), data}
+  end
 
-    {flags, data} =
-      if overlays[:date] || overlays[:location] do
-        date_bin = encode_string(overlays[:date] || "")
-        loc_bin = encode_string(overlays[:location] || "")
-        {flags ||| 0x01, data <> date_bin <> loc_bin}
-      else
-        {flags, data}
-      end
+  defp encode_metadata_overlay(overlays, flags, data) do
+    if overlays[:date] || overlays[:location] do
+      date_bin = encode_string(overlays[:date] || "")
+      loc_bin = encode_string(overlays[:location] || "")
+      {flags ||| 0x01, data <> date_bin <> loc_bin}
+    else
+      {flags, data}
+    end
+  end
 
-    {flags, data} =
-      if overlays[:temp] || overlays[:condition] do
-        temp_bin = encode_string(overlays[:temp] || "")
-        cond_bin = encode_string(overlays[:condition] || "")
-        {flags ||| 0x02, data <> temp_bin <> cond_bin}
-      else
-        {flags, data}
-      end
+  defp encode_weather_overlay(overlays, flags, data) do
+    if overlays[:temp] || overlays[:condition] do
+      temp_bin = encode_string(overlays[:temp] || "")
+      cond_bin = encode_string(overlays[:condition] || "")
+      {flags ||| 0x02, data <> temp_bin <> cond_bin}
+    else
+      {flags, data}
+    end
+  end
 
-    {flags, data} =
-      if overlays[:debug] do
-        {flags ||| 0x04, data <> encode_string(overlays[:debug])}
-      else
-        {flags, data}
-      end
+  defp encode_debug_overlay(overlays, flags, data) do
+    if overlays[:debug] do
+      {flags ||| 0x04, data <> encode_string(overlays[:debug])}
+    else
+      {flags, data}
+    end
+  end
 
+  defp encode_status_flags(overlays, flags) do
     flags = if overlays[:show_disconnected], do: flags ||| 0x08, else: flags
-    flags = if overlays[:show_empty_album], do: flags ||| 0x10, else: flags
-
-    {flags, data}
+    if overlays[:show_empty_album], do: flags ||| 0x10, else: flags
   end
 
   defp encode_string(s) when is_binary(s) do

@@ -1,4 +1,5 @@
 defmodule NervesPhotos.FrameCompositor do
+  @moduledoc false
   use GenServer
   require Logger
 
@@ -46,16 +47,7 @@ defmodule NervesPhotos.FrameCompositor do
         port = state.port
 
         Task.start(fn ->
-          case module.fetch_image(source_id, config) do
-            {:ok, bytes} ->
-              case NervesPhotos.CairoPort.load_image(port, next_slot, bytes) do
-                {:ok, _dims} -> send(compositor, {:image_loaded, next_slot})
-                {:error, _} -> send(compositor, {:image_load_error, source_id})
-              end
-
-            {:error, _} ->
-              send(compositor, {:image_load_error, source_id})
-          end
+          load_and_notify(module, source_id, config, port, next_slot, compositor)
         end)
 
         {:noreply, Map.merge(state, %{phase: :loading, metadata: metadata})}
@@ -174,6 +166,19 @@ defmodule NervesPhotos.FrameCompositor do
       Map.put(overlays, :debug, "#{pos}/#{total_q}")
     else
       overlays
+    end
+  end
+
+  defp load_and_notify(module, source_id, config, port, next_slot, compositor) do
+    case module.fetch_image(source_id, config) do
+      {:ok, bytes} ->
+        case NervesPhotos.CairoPort.load_image(port, next_slot, bytes) do
+          {:ok, _dims} -> send(compositor, {:image_loaded, next_slot})
+          {:error, _} -> send(compositor, {:image_load_error, source_id})
+        end
+
+      {:error, _} ->
+        send(compositor, {:image_load_error, source_id})
     end
   end
 end
