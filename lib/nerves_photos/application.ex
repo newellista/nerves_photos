@@ -37,7 +37,7 @@ defmodule NervesPhotos.Application do
         ]
 
         if Application.get_env(:nerves_photos, :headless_mode, false) do
-          core
+          core ++ [NervesPhotos.Scene.Headless]
         else
           compositor_children = [
             NervesPhotos.CairoPort,
