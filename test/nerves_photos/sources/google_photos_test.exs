@@ -1,5 +1,5 @@
 defmodule NervesPhotos.Sources.GooglePhotosTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias NervesPhotos.Sources.GooglePhotos
 

@@ -12,7 +12,10 @@ defmodule NervesPhotos.SettingsStore do
   @default_path "/data/nerves_photos/settings.json"
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    case Keyword.get(opts, :name, __MODULE__) do
+      nil -> GenServer.start_link(__MODULE__, opts)
+      name -> GenServer.start_link(__MODULE__, opts, name: name)
+    end
   end
 
   def get(key), do: GenServer.call(__MODULE__, {:get, key})

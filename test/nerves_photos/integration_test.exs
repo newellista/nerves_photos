@@ -1,5 +1,5 @@
 defmodule NervesPhotos.IntegrationTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: false
 
   defmodule FakeImmich do
     def list_assets(_config) do
