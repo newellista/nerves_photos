@@ -35,7 +35,9 @@ static void handle_init(const uint8_t *buf, int len) {
     if (g_display) { g_display->close(g_display); g_display = NULL; }
 
     if (mode == 1) g_display = display_open_fbdev();
+#ifdef HAVE_DRM
     else if (mode == 2) g_display = display_open_drm();
+#endif
     else g_display = display_open_auto();
 
     if (!g_display) { write_error(ERR_DISPLAY_FAILED, "display open failed"); return; }

@@ -14,6 +14,8 @@ typedef struct display_backend {
 
 display_backend_t *display_open_auto(void);
 display_backend_t *display_open_fbdev(void);
+#ifdef HAVE_DRM
 display_backend_t *display_open_drm(void);
+#endif
 
 #endif
