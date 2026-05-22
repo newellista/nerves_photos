@@ -26,11 +26,12 @@ defmodule NervesPhotos.FrameCompositor do
       has_photo: false,
       advance_fn: opts[:advance_fn] || (&NervesPhotos.PhotoQueue.advance/0),
       queue_position_fn: opts[:queue_position_fn] || (&NervesPhotos.PhotoQueue.queue_position/0),
-      weather_fn: opts[:weather_fn] || (&NervesPhotos.WeatherFetcher.current/0),
-      settings_fn: opts[:settings_fn] || (&NervesPhotos.SettingsStore.get/1)
+      weather_fn: opts[:weather_fn] || (&NervesPhotos.WeatherFetcher.current/0)
     }
 
-    case NervesPhotos.CairoPort.init_display(port_pid) do
+    display_mode = Application.get_env(:nerves_photos, :compositor_display_mode, :auto)
+
+    case NervesPhotos.CairoPort.init_display(port_pid, display_mode: display_mode) do
       {:ok, _dims} -> {:ok, state}
       {:error, reason} -> {:stop, {:display_init_failed, reason}}
     end
@@ -73,7 +74,7 @@ defmodule NervesPhotos.FrameCompositor do
   def handle_info({:slide_timer, :next_photo}, state), do: {:noreply, state}
 
   def handle_info({:image_loaded, slot}, %{phase: :loading} = state) do
-    transition_type = state.settings_fn.(:transition_type) || :fade_to_black
+    transition_type = Application.get_env(:nerves_photos, :transition_type, :fade_to_black)
     transition_steps = if transition_type == :none, do: 0, else: @fade_steps
 
     state =
@@ -110,8 +111,8 @@ defmodule NervesPhotos.FrameCompositor do
 
     weather = state.weather_fn.()
     {pos, total_q} = state.queue_position_fn.()
-    crop_mode = state.settings_fn.(:crop_mode) || :letterbox
-    transition_type = state.settings_fn.(:transition_type) || :fade_to_black
+    crop_mode = Application.get_env(:nerves_photos, :crop_mode, :letterbox)
+    transition_type = Application.get_env(:nerves_photos, :transition_type, :fade_to_black)
 
     overlays = build_overlays(state, weather, pos, total_q)
 

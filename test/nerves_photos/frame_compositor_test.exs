@@ -59,8 +59,7 @@ defmodule NervesPhotos.FrameCompositorTest do
       name: :"compositor_#{:erlang.unique_integer([:positive])}",
       advance_fn: fn -> :loading end,
       queue_position_fn: fn -> {0, 0} end,
-      weather_fn: fn -> :unavailable end,
-      settings_fn: fn _key -> nil end
+      weather_fn: fn -> :unavailable end
     ]
 
     start_supervised!({FrameCompositor, Keyword.merge(defaults, opts)})
