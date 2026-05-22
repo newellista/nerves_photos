@@ -72,7 +72,7 @@ defmodule NervesPhotos.FrameCompositor do
 
   def handle_info({:slide_timer, :next_photo}, state), do: {:noreply, state}
 
-  def handle_info({:image_loaded, slot}, state) do
+  def handle_info({:image_loaded, slot}, %{phase: :loading} = state) do
     transition_type = state.settings_fn.(:transition_type) || :fade_to_black
     transition_steps = if transition_type == :none, do: 0, else: @fade_steps
 
@@ -91,11 +91,15 @@ defmodule NervesPhotos.FrameCompositor do
     {:noreply, state}
   end
 
-  def handle_info({:image_load_error, _}, state) do
+  def handle_info({:image_loaded, _slot}, state), do: {:noreply, state}
+
+  def handle_info({:image_load_error, _}, %{phase: :loading} = state) do
     NervesPhotos.CairoPort.free_slot(state.port, state.next_slot)
     send(self(), {:slide_timer, :next_photo})
     {:noreply, Map.put(state, :phase, :idle)}
   end
+
+  def handle_info({:image_load_error, _}, state), do: {:noreply, state}
 
   def handle_info(
         :transition_tick,

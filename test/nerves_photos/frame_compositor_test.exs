@@ -257,18 +257,21 @@ defmodule NervesPhotos.FrameCompositorTest do
 
   test "image_loaded clears disconnected and empty_album flags" do
     port = make_port(:clear_flags_test)
+    {:ok, agent} = Agent.start_link(fn -> :disconnected end)
 
     compositor =
       make_compositor(port,
-        advance_fn: fn -> :disconnected end
+        advance_fn: fn -> Agent.get(agent, & &1) end
       )
 
     send(compositor, {:slide_timer, :next_photo})
     Process.sleep(20)
     assert :sys.get_state(compositor).disconnected == true
 
-    send(compositor, {:image_loaded, 1})
-    Process.sleep(20)
+    Agent.update(agent, fn _ -> make_asset() end)
+    send(compositor, {:slide_timer, :next_photo})
+    Process.sleep(500)
+
     state = :sys.get_state(compositor)
     assert state.disconnected == false
     assert state.empty_album == false
