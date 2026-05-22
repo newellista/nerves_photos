@@ -2,8 +2,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <setjmp.h>
 #include <jpeglib.h>
 #include <png.h>
+
+struct jpeg_err_ext {
+    struct jpeg_error_mgr pub;
+    jmp_buf jb;
+};
+
+static void jpeg_error_exit_safe(j_common_ptr cinfo) {
+    longjmp(((struct jpeg_err_ext *)cinfo->err)->jb, 1);
+}
 
 static int is_jpeg(const uint8_t *data, uint32_t len) {
     return len >= 2 && data[0] == 0xFF && data[1] == 0xD8;
@@ -16,10 +26,15 @@ static int is_png(const uint8_t *data, uint32_t len) {
 
 static cairo_surface_t *decode_jpeg(const uint8_t *data, uint32_t len) {
     struct jpeg_decompress_struct cinfo;
-    struct jpeg_error_mgr jerr;
+    struct jpeg_err_ext jerr;
 
-    cinfo.err = jpeg_std_error(&jerr);
+    cinfo.err = jpeg_std_error(&jerr.pub);
+    jerr.pub.error_exit = jpeg_error_exit_safe;
     jpeg_create_decompress(&cinfo);
+    if (setjmp(jerr.jb)) {
+        jpeg_destroy_decompress(&cinfo);
+        return NULL;
+    }
     jpeg_mem_src(&cinfo, data, len);
 
     if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK) {
@@ -35,6 +50,7 @@ static cairo_surface_t *decode_jpeg(const uint8_t *data, uint32_t len) {
 
     cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
     if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(surface);
         jpeg_destroy_decompress(&cinfo);
         return NULL;
     }
@@ -124,6 +140,7 @@ static cairo_surface_t *decode_png(const uint8_t *data, uint32_t len) {
 
     cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
     if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(surface);
         png_destroy_read_struct(&png, &info, NULL);
         return NULL;
     }

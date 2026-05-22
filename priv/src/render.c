@@ -52,6 +52,10 @@ void render_frame(
     int h = display->height;
 
     cairo_surface_t *canvas = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+    if (cairo_surface_status(canvas) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(canvas);
+        return;
+    }
     cairo_t *cr = cairo_create(canvas);
 
     cairo_set_source_rgb(cr, 0, 0, 0);

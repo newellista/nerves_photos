@@ -40,9 +40,6 @@ static void handle_init(const uint8_t *buf, int len) {
 
     if (!g_display) { write_error(ERR_DISPLAY_FAILED, "display open failed"); return; }
 
-    g_display->width = w;
-    g_display->height = h;
-
     write_ok();
 }
 
