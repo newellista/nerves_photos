@@ -12,32 +12,26 @@ defmodule NervesPhotos.CairoPort do
     GenServer.start_link(__MODULE__, opts, gen_opts)
   end
 
-  @doc "Initialize the display. Returns :ok or {:error, reason}."
   def init_display(pid \\ __MODULE__, opts \\ []) do
     GenServer.call(pid, {:init_display, opts}, @timeout_default)
   end
 
-  @doc "Load an image into slot 0 or 1. Returns {:ok, {width, height}} or {:error, reason}."
   def load_image(pid \\ __MODULE__, slot_id, image_bytes) do
     GenServer.call(pid, {:load_image, slot_id, image_bytes}, @timeout_load)
   end
 
-  @doc "Free image slot 0 or 1. Returns :ok or {:error, reason}."
   def free_slot(pid \\ __MODULE__, slot_id) do
     GenServer.call(pid, {:free_slot, slot_id}, @timeout_default)
   end
 
-  @doc "Render a frame. params is a map with keys: transition_type, t, crop_mode, overlays. Returns :ok or {:error, reason}."
   def render_frame(pid \\ __MODULE__, params) do
     GenServer.call(pid, {:render_frame, params}, @timeout_render)
   end
 
-  @doc "Get display dimensions. Returns {:ok, {width, height}} or {:error, reason}."
   def get_dimensions(pid \\ __MODULE__) do
     GenServer.call(pid, :get_dimensions, @timeout_default)
   end
 
-  @doc "Ping the port. Returns :pong or {:error, reason}."
   def ping(pid \\ __MODULE__) do
     GenServer.call(pid, :ping, @timeout_default)
   end
@@ -64,7 +58,13 @@ defmodule NervesPhotos.CairoPort do
 
   def handle_info({port, {:exit_status, code}}, %{port: port} = state) do
     Logger.error("CairoPort: compositor exited with status #{code}")
-    {:stop, {:compositor_exited, code}, state}
+
+    if state.pending do
+      {_request, from} = state.pending
+      GenServer.reply(from, {:error, {:compositor_exited, code}})
+    end
+
+    {:stop, {:compositor_exited, code}, %{state | pending: nil}}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}

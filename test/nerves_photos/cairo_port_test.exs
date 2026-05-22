@@ -221,4 +221,18 @@ defmodule NervesPhotos.CairoPortTest do
     assert_receive {:captured, data}, 500
     assert <<0x05>> == data
   end
+
+  test "pending call gets error when port exits" do
+    fake_pid = spawn(fn -> :ok end)
+
+    send_fn = fn _payload ->
+      server = self()
+      send(server, {fake_pid, {:exit_status, 1}})
+    end
+
+    pid =
+      start_supervised!({NervesPhotos.CairoPort, [open_port_fn: fn -> {fake_pid, send_fn} end]})
+
+    assert {:error, {:compositor_exited, 1}} == CairoPort.ping(pid)
+  end
 end
