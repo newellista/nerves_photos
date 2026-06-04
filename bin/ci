@@ -16,7 +16,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-ALL_TARGETS="rpi3 rpi5"
+ALL_TARGETS="rpi3 rpi4 rpi5"
 
 RUN_HOST=1
 RUN_FIRMWARE=1
