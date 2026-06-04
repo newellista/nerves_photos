@@ -33,6 +33,7 @@ defmodule NervesPhotos.FrameCompositor do
     display_mode = Application.get_env(:nerves_photos, :compositor_display_mode, :auto)
 
     case NervesPhotos.CairoPort.init_display(port_pid, display_mode: display_mode) do
+      :ok -> {:ok, state}
       {:ok, _dims} -> {:ok, state}
       {:error, reason} -> {:stop, {:display_init_failed, reason}}
     end

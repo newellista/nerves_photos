@@ -17,7 +17,7 @@ defmodule NervesPhotos.FrameCompositorTest do
 
     @impl true
     def handle_call({:init_display, _opts}, _from, calls) do
-      {:reply, {:ok, {1920, 1080}}, [:init_display | calls]}
+      {:reply, :ok, [:init_display | calls]}
     end
 
     def handle_call({:load_image, slot, _bytes}, _from, calls) do
