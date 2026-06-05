@@ -6,7 +6,7 @@ defmodule NervesPhotos.CairoPort do
 
   @timeout_default 500
   @timeout_load 5000
-  @timeout_render 100
+  @timeout_render 5000
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: opts[:name] || __MODULE__)
