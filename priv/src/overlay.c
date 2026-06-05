@@ -1,7 +1,13 @@
 #include "overlay.h"
-#include <fontconfig/fontconfig.h>
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include <cairo/cairo-ft.h>
 #include <string.h>
 #include <math.h>
+
+static FT_Library g_ft_lib = NULL;
+static FT_Face g_ft_face = NULL;
+static cairo_font_face_t *g_font_face = NULL;
 
 static void rounded_rect(cairo_t *cr, double x, double y, double w, double h, double r) {
     cairo_move_to(cr, x + r, y);
@@ -17,7 +23,11 @@ static void rounded_rect(cairo_t *cr, double x, double y, double w, double h, do
 }
 
 static void set_font(cairo_t *cr, double size) {
-    cairo_select_font_face(cr, "Roboto", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    if (g_font_face) {
+        cairo_set_font_face(cr, g_font_face);
+    } else {
+        cairo_select_font_face(cr, "Roboto", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    }
     cairo_set_font_size(cr, size);
 }
 
@@ -45,10 +55,9 @@ static void draw_pill_text(cairo_t *cr, double x, double y, double w, double h,
 }
 
 void fc_init_fonts(void) {
-    FcConfig *cfg = FcInitLoadConfigAndFonts();
-    FcConfigParseAndLoad(cfg, (FcChar8 *)"/app/priv/fonts/fonts.conf", FcFalse);
-    FcConfigAppFontAddFile(cfg, (FcChar8 *)"/app/priv/fonts/Roboto-Regular.ttf");
-    FcConfigSetCurrent(cfg);
+    if (FT_Init_FreeType(&g_ft_lib) != 0) return;
+    if (FT_New_Face(g_ft_lib, "/app/priv/fonts/Roboto-Regular.ttf", 0, &g_ft_face) != 0) return;
+    g_font_face = cairo_ft_font_face_create_for_ft_face(g_ft_face, 0);
 }
 
 void draw_overlays(cairo_t *cr, int width, int height, const overlay_params_t *params) {

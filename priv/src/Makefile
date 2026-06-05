@@ -10,11 +10,11 @@ endif
 
 CFLAGS += -Wall -Wextra -Wno-unused-parameter -O2 -std=gnu99
 CFLAGS += $(shell $(PKG_CONFIG) --cflags cairo 2>/dev/null)
-CFLAGS += $(shell $(PKG_CONFIG) --cflags fontconfig 2>/dev/null)
+CFLAGS += $(shell $(PKG_CONFIG) --cflags freetype2 2>/dev/null)
 CFLAGS += $(shell $(PKG_CONFIG) --cflags libjpeg 2>/dev/null)
 CFLAGS += $(shell $(PKG_CONFIG) --cflags libpng 2>/dev/null)
 LDFLAGS += $(shell $(PKG_CONFIG) --libs cairo 2>/dev/null)
-LDFLAGS += $(shell $(PKG_CONFIG) --libs fontconfig 2>/dev/null)
+LDFLAGS += $(shell $(PKG_CONFIG) --libs freetype2 2>/dev/null)
 LDFLAGS += $(shell $(PKG_CONFIG) --libs libjpeg 2>/dev/null)
 LDFLAGS += $(shell $(PKG_CONFIG) --libs libpng 2>/dev/null)
 LDFLAGS += -lm
