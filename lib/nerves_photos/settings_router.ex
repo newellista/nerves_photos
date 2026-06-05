@@ -161,99 +161,60 @@ defmodule NervesPhotos.SettingsRouter do
     end
   end
 
-  post "/settings/photo_sources/:index/authorize" do
+  get "/settings/photo_sources/:index/authorize" do
     sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
 
-    result =
-      case Integer.parse(conn.params["index"]) do
-        {idx, ""} when idx >= 0 and idx < length(sources) ->
-          source = Enum.at(sources, idx)
+    case Integer.parse(conn.params["index"]) do
+      {idx, ""} when idx >= 0 and idx < length(sources) ->
+        source = Enum.at(sources, idx)
 
-          if source[:type] == "google_photos_api" do
-            case NervesPhotos.GoogleOAuth.device_authorize(source[:client_id]) do
-              {:ok, info} ->
-                NervesPhotos.GoogleOAuthState.put(idx, %{
-                  device_code: info.device_code,
-                  interval: info.interval
-                })
+        if source[:type] == "google_photos_api" do
+          state = Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
+          NervesPhotos.GoogleOAuthState.put(state, %{index: idx})
+          redirect_uri = oauth_redirect_uri(conn)
 
-                {:ok,
-                 %{
-                   user_code: info.user_code,
-                   verification_url: info.verification_url,
-                   interval: info.interval
-                 }}
+          url =
+            NervesPhotos.GoogleOAuth.authorization_url(source[:client_id], redirect_uri, state)
 
-              {:error, _reason} ->
-                {:error, 500, "failed to start authorization"}
-            end
-          else
-            {:error, 422, "not a google_photos_api source"}
-          end
+          conn
+          |> put_resp_header("location", url)
+          |> send_resp(302, "")
+        else
+          send_resp(conn, 422, "Not a google_photos_api source")
+        end
 
-        _ ->
-          {:error, 400, "invalid index"}
-      end
-
-    case result do
-      {:ok, body} ->
-        conn
-        |> put_resp_header("content-type", "application/json")
-        |> send_resp(200, Jason.encode!(body))
-
-      {:error, status, message} ->
-        conn
-        |> put_resp_header("content-type", "application/json")
-        |> send_resp(status, Jason.encode!(%{error: message}))
+      _ ->
+        send_resp(conn, 400, "Invalid index")
     end
   end
 
-  get "/settings/photo_sources/:index/oauth_status" do
-    sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
+  get "/settings/oauth_callback" do
+    with {:ok, code, state} <- oauth_callback_params(conn),
+         %{index: idx} <- NervesPhotos.GoogleOAuthState.get(state),
+         :ok <- NervesPhotos.GoogleOAuthState.delete(state),
+         sources = NervesPhotos.SettingsStore.get(:photo_sources) || [],
+         source when not is_nil(source) <- Enum.at(sources, idx),
+         redirect_uri = oauth_redirect_uri(conn),
+         {:ok, %{refresh_token: rt}} <-
+           NervesPhotos.GoogleOAuth.exchange_code(
+             source[:client_id],
+             source[:client_secret],
+             code,
+             redirect_uri
+           ) do
+      updated = Map.put(source, :refresh_token, rt)
+      NervesPhotos.SettingsStore.put(:photo_sources, List.replace_at(sources, idx, updated))
 
-    result =
-      case Integer.parse(conn.params["index"]) do
-        {idx, ""} when idx >= 0 and idx < length(sources) ->
-          source = Enum.at(sources, idx)
-          state = NervesPhotos.GoogleOAuthState.get(idx)
+      conn
+      |> put_resp_header("location", "/settings")
+      |> send_resp(302, "")
+    else
+      {:error, :denied, reason} ->
+        oauth_error(conn, "Google denied authorization: #{reason}")
 
-          case {source[:type], state} do
-            {"google_photos_api", %{device_code: device_code}} ->
-              case NervesPhotos.GoogleOAuth.poll_token(
-                     source[:client_id],
-                     source[:client_secret],
-                     device_code
-                   ) do
-                {:ok, %{refresh_token: rt}} ->
-                  updated = Map.put(source, :refresh_token, rt)
-
-                  NervesPhotos.SettingsStore.put(
-                    :photo_sources,
-                    List.replace_at(sources, idx, updated)
-                  )
-
-                  NervesPhotos.GoogleOAuthState.delete(idx)
-                  %{status: "authorized"}
-
-                :pending ->
-                  %{status: "pending"}
-
-                {:error, reason} ->
-                  NervesPhotos.GoogleOAuthState.delete(idx)
-                  %{status: "error", error: to_string(reason)}
-              end
-
-            _ ->
-              %{status: "not_started"}
-          end
-
-        _ ->
-          %{status: "error", error: "invalid index"}
-      end
-
-    conn
-    |> put_resp_header("content-type", "application/json")
-    |> send_resp(200, Jason.encode!(result))
+      _ ->
+        oauth_error(conn, "Authorization failed. Please try again.")
+    end
   end
 
   forward("/current", to: NervesPhotos.CurrentRouter)
@@ -581,12 +542,7 @@ defmodule NervesPhotos.SettingsRouter do
         <button type="button" class="btn-secondary" onclick="toggleEdit(#{idx})">Cancel</button>
       </div>
       <div style="margin-top:12px">
-        <button type="button" class="btn-secondary" onclick="startOAuth(#{idx})">#{auth_label}</button>
-      </div>
-      <div id="oauth-status-#{idx}" style="display:none;margin-top:12px;font-size:13px">
-        <p>Visit: <strong><span id="oauth-url-#{idx}"></span></strong></p>
-        <p>Enter code: <strong><span id="oauth-code-#{idx}"></span></strong></p>
-        <p id="oauth-msg-#{idx}">Waiting for authorization...</p>
+        <a href="/settings/photo_sources/#{idx}/authorize" class="btn-secondary" style="display:inline-block;text-decoration:none">#{auth_label}</a>
       </div>
     </form>
     """
@@ -749,40 +705,35 @@ defmodule NervesPhotos.SettingsRouter do
       }).catch(function() { alert('Network error. Please try again.'); });
     }
 
-    function startOAuth(index) {
-      fetch('/settings/photo_sources/' + index + '/authorize', {
-        method: 'POST',
-        headers: {'x-csrf-token': getCsrfToken()}
-      })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          if (data.error) { alert('Error: ' + data.error); return; }
-          document.getElementById('oauth-status-' + index).style.display = 'block';
-          document.getElementById('oauth-url-' + index).textContent = data.verification_url;
-          document.getElementById('oauth-code-' + index).textContent = data.user_code;
-          pollOAuth(index, (data.interval || 5) * 1000);
-        })
-        .catch(function() { alert('Failed to start authorization. Check client_id and try again.'); });
-    }
-
-    function pollOAuth(index, intervalMs) {
-      var timer = setInterval(function() {
-        fetch('/settings/photo_sources/' + index + '/oauth_status')
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            if (data.status === 'authorized') {
-              clearInterval(timer);
-              document.getElementById('oauth-msg-' + index).textContent = 'Authorized! Reloading...';
-              setTimeout(function() { location.reload(); }, 1500);
-            } else if (data.status === 'error') {
-              clearInterval(timer);
-              document.getElementById('oauth-msg-' + index).textContent = 'Error: ' + data.error;
-            }
-          });
-      }, intervalMs);
-    }
     </script>
     """
+  end
+
+  defp oauth_redirect_uri(conn) do
+    port = if conn.port in [80, 443], do: nil, else: conn.port
+
+    URI.to_string(%URI{
+      scheme: to_string(conn.scheme),
+      host: conn.host,
+      port: port,
+      path: "/settings/oauth_callback"
+    })
+  end
+
+  defp oauth_callback_params(conn) do
+    case conn.params do
+      %{"error" => error} -> {:error, :denied, error}
+      %{"code" => code, "state" => state} -> {:ok, code, state}
+      _ -> {:error, :missing_params}
+    end
+  end
+
+  defp oauth_error(conn, message) do
+    send_resp(
+      conn,
+      400,
+      "#{Plug.HTML.html_escape(message)} <a href='/settings'>Back to settings</a>"
+    )
   end
 
   defp atomize_source_params(params) do

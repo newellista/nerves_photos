@@ -1,49 +1,43 @@
 defmodule NervesPhotos.GoogleOAuth do
   @moduledoc false
 
-  @device_endpoint "https://oauth2.googleapis.com/device/code"
+  @auth_endpoint "https://accounts.google.com/o/oauth2/v2/auth"
   @token_endpoint "https://oauth2.googleapis.com/token"
   @scope "https://www.googleapis.com/auth/photoslibrary.readonly"
 
-  def device_authorize(client_id, opts \\ []) do
-    req = build_req(opts)
+  def authorization_url(client_id, redirect_uri, state) do
+    query =
+      URI.encode_query([
+        {"response_type", "code"},
+        {"client_id", client_id},
+        {"redirect_uri", redirect_uri},
+        {"scope", @scope},
+        {"access_type", "offline"},
+        {"prompt", "consent"},
+        {"state", state}
+      ])
 
-    case Req.post(req, url: @device_endpoint, form: [client_id: client_id, scope: @scope]) do
-      {:ok, %{status: 200, body: body}} ->
-        {:ok,
-         %{
-           device_code: body["device_code"],
-           user_code: body["user_code"],
-           verification_url: body["verification_url"],
-           expires_in: body["expires_in"],
-           interval: body["interval"]
-         }}
-
-      {:ok, %{body: body}} ->
-        {:error, body["error"]}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+    @auth_endpoint <> "?" <> query
   end
 
-  def poll_token(client_id, client_secret, device_code, opts \\ []) do
+  def exchange_code(client_id, client_secret, code, redirect_uri, opts \\ []) do
     req = build_req(opts)
 
     case Req.post(req,
            url: @token_endpoint,
            form: [
+             code: code,
              client_id: client_id,
              client_secret: client_secret,
-             device_code: device_code,
-             grant_type: "urn:ietf:params:oauth:grant-type:device_code"
+             redirect_uri: redirect_uri,
+             grant_type: "authorization_code"
            ]
          ) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, %{access_token: body["access_token"], refresh_token: body["refresh_token"]}}
 
-      {:ok, %{body: %{"error" => err}}} when err in ["authorization_pending", "slow_down"] ->
-        :pending
+      {:ok, %{body: %{"error" => "invalid_grant"}}} ->
+        {:error, :invalid_grant}
 
       {:ok, %{body: body}} ->
         {:error, body["error"]}
