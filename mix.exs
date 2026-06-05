@@ -31,7 +31,11 @@ defmodule NervesPhotos.MixProject do
       aliases: aliases(),
       deps: deps(),
       releases: [{@app, release()}],
-      licenses: ["AGPL-3.0-only"]
+      licenses: ["AGPL-3.0-only"],
+      dialyzer: [
+        plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
+        plt_add_apps: [:mix]
+      ]
     ]
   end
 
@@ -104,7 +108,8 @@ defmodule NervesPhotos.MixProject do
 
       # Dev tooling
       {:credo, "~> 1.7", only: :dev, runtime: false},
-      {:mix_audit, "~> 2.1", only: :dev, runtime: false}
+      {:mix_audit, "~> 2.1", only: :dev, runtime: false},
+      {:dialyxir, "~> 1.4", only: :dev, runtime: false}
     ]
   end
 

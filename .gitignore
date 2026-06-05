@@ -13,3 +13,4 @@ erl_crash.dump
 .claude/settings.local.json
 /priv/compositor
 /priv/src/*.o
+/priv/plts/
