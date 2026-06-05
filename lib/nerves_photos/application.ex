@@ -46,11 +46,16 @@ defmodule NervesPhotos.Application do
 
           core ++
             [
-              {Supervisor,
-               [
-                 compositor_children,
-                 [strategy: :rest_for_one, name: NervesPhotos.CompositorSupervisor]
-               ]}
+              %{
+                id: NervesPhotos.CompositorSupervisor,
+                start:
+                  {Supervisor, :start_link,
+                   [
+                     compositor_children,
+                     [strategy: :rest_for_one, name: NervesPhotos.CompositorSupervisor]
+                   ]},
+                type: :supervisor
+              }
             ]
         end
       end
