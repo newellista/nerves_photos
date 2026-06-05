@@ -6,6 +6,7 @@ defmodule NervesPhotos.Application do
   @impl true
   def start(_type, _args) do
     :ets.new(:nerves_photos_sessions, [:named_table, :public, read_concurrency: true])
+    hide_cursor()
     children = target_children()
     opts = [strategy: :one_for_one, name: NervesPhotos.Supervisor]
     Supervisor.start_link(children, opts)
@@ -13,9 +14,12 @@ defmodule NervesPhotos.Application do
 
   cond do
     Mix.env() == :test ->
+      defp hide_cursor, do: :ok
       defp target_children, do: []
 
     Mix.target() == :host ->
+      defp hide_cursor, do: :ok
+
       defp target_children do
         [
           NervesPhotos.SettingsStore,
@@ -25,6 +29,8 @@ defmodule NervesPhotos.Application do
       end
 
     true ->
+      defp hide_cursor, do: File.write("/dev/tty1", "\e[?25l")
+
       defp target_children do
         core = [
           NervesPhotos.SettingsStore,
