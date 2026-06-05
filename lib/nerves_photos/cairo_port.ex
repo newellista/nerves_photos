@@ -114,9 +114,13 @@ defmodule NervesPhotos.CairoPort do
     transition = encode_transition(params[:transition_type] || :none)
     t = params[:t] || 0.0
     crop = encode_crop_mode(params[:crop_mode] || :letterbox)
+    from_slot = params[:from_slot] || 0
+    to_slot = params[:to_slot] || 1
     overlays = params[:overlays] || %{}
     {flags, overlay_data} = encode_overlays(overlays)
-    <<0x04, transition::8, t::big-float-32, crop::8, flags::8, overlay_data::binary>>
+
+    <<0x04, transition::8, t::big-float-32, crop::8, from_slot::8, to_slot::8, flags::8,
+      overlay_data::binary>>
   end
 
   defp encode_command(:get_dimensions), do: <<0x05>>

@@ -87,7 +87,7 @@ static void handle_free_slot(const uint8_t *buf, int len) {
 
 static void handle_render_frame(const uint8_t *buf, int len) {
     if (!g_display) { write_error(ERR_NOT_INIT, "not initialized"); return; }
-    if (len < 8) { write_error(ERR_BAD_PAYLOAD, "render: short"); return; }
+    if (len < 10) { write_error(ERR_BAD_PAYLOAD, "render: short"); return; }
 
     int transition_type = buf[1];
 
@@ -98,11 +98,13 @@ static void handle_render_frame(const uint8_t *buf, int len) {
     memcpy(&t, &ti, 4);
 
     int crop_mode = buf[6];
-    uint8_t flags = buf[7];
+    int from_slot = buf[7];
+    int to_slot   = buf[8];
+    uint8_t flags = buf[9];
 
     overlay_params_t overlays = {NULL, NULL, NULL, NULL, NULL, 0, 0};
 
-    int pos = 8;
+    int pos = 10;
 
     if (flags & 0x01) {
         overlays.date     = parse_str(buf, len, &pos);
@@ -118,7 +120,8 @@ static void handle_render_frame(const uint8_t *buf, int len) {
     if (flags & 0x08) overlays.show_disconnected = 1;
     if (flags & 0x10) overlays.show_empty_album  = 1;
 
-    render_frame(g_slots, g_display, transition_type, t, crop_mode, &overlays);
+    cairo_surface_t *ordered[2] = {g_slots[from_slot], g_slots[to_slot]};
+    render_frame(ordered, g_display, transition_type, t, crop_mode, &overlays);
 
     free(overlays.date);
     free(overlays.location);

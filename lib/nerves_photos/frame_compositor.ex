@@ -113,6 +113,8 @@ defmodule NervesPhotos.FrameCompositor do
       transition_type: transition_type,
       t: t,
       crop_mode: crop_mode,
+      from_slot: state.current_slot,
+      to_slot: state.next_slot,
       overlays: overlays
     })
 
