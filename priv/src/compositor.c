@@ -42,6 +42,11 @@ static void handle_init(const uint8_t *buf, int len) {
 
     if (!g_display) { write_error(ERR_DISPLAY_FAILED, "display open failed"); return; }
 
+    int pos = 6;
+    char *font_dir = parse_str(buf, len, &pos);
+    fc_init_fonts(font_dir);
+    free(font_dir);
+
     write_ok();
 }
 
@@ -144,8 +149,6 @@ static void handle_get_dimensions(void) {
 }
 
 int main(void) {
-    fc_init_fonts();
-
     uint8_t *buf;
     int len;
 

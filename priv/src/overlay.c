@@ -2,6 +2,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <cairo/cairo-ft.h>
+#include <stdio.h>
 #include <string.h>
 #include <math.h>
 
@@ -54,9 +55,12 @@ static void draw_pill_text(cairo_t *cr, double x, double y, double w, double h,
     cairo_restore(cr);
 }
 
-void fc_init_fonts(void) {
+void fc_init_fonts(const char *font_dir) {
+    if (!font_dir || g_font_face) return;
+    char path[512];
+    snprintf(path, sizeof(path), "%s/Roboto-Regular.ttf", font_dir);
     if (FT_Init_FreeType(&g_ft_lib) != 0) return;
-    if (FT_New_Face(g_ft_lib, "/app/priv/fonts/Roboto-Regular.ttf", 0, &g_ft_face) != 0) return;
+    if (FT_New_Face(g_ft_lib, path, 0, &g_ft_face) != 0) return;
     g_font_face = cairo_ft_font_face_create_for_ft_face(g_ft_face, 0);
 }
 

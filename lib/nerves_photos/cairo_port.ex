@@ -98,7 +98,10 @@ defmodule NervesPhotos.CairoPort do
     width = opts[:width] || 1920
     height = opts[:height] || 1080
     mode = encode_display_mode(opts[:display_mode] || :auto)
-    <<0x01, width::big-unsigned-16, height::big-unsigned-16, mode>>
+    font_dir = opts[:font_dir] || Application.app_dir(:nerves_photos, "priv/fonts")
+
+    <<0x01, width::big-unsigned-16, height::big-unsigned-16, mode,
+      encode_string(font_dir)::binary>>
   end
 
   defp encode_command({:load_image, slot_id, bytes}) do
