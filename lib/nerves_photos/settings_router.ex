@@ -20,8 +20,8 @@ defmodule NervesPhotos.SettingsRouter do
   plug(NervesPhotos.AuthPlug)
   plug(:dispatch)
 
-  @valid_source_types ~w(immich google_photos)
-  @source_param_keys ~w(type url api_key album_id share_url)
+  @valid_source_types ~w(immich google_photos google_photos_api)
+  @source_param_keys ~w(type url api_key album_id share_url client_id client_secret)
 
   match("/login", do: NervesPhotos.AuthRouter.call(conn, []))
   match("/logout", do: NervesPhotos.AuthRouter.call(conn, []))
@@ -159,6 +159,101 @@ defmodule NervesPhotos.SettingsRouter do
         |> put_resp_header("content-type", "application/json")
         |> send_resp(403, Jason.encode!(%{error: "forbidden"}))
     end
+  end
+
+  post "/settings/photo_sources/:index/authorize" do
+    sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
+
+    result =
+      case Integer.parse(conn.params["index"]) do
+        {idx, ""} when idx >= 0 and idx < length(sources) ->
+          source = Enum.at(sources, idx)
+
+          if source[:type] == "google_photos_api" do
+            case NervesPhotos.GoogleOAuth.device_authorize(source[:client_id]) do
+              {:ok, info} ->
+                NervesPhotos.GoogleOAuthState.put(idx, %{
+                  device_code: info.device_code,
+                  interval: info.interval
+                })
+
+                {:ok,
+                 %{
+                   user_code: info.user_code,
+                   verification_url: info.verification_url,
+                   interval: info.interval
+                 }}
+
+              {:error, _reason} ->
+                {:error, 500, "failed to start authorization"}
+            end
+          else
+            {:error, 422, "not a google_photos_api source"}
+          end
+
+        _ ->
+          {:error, 400, "invalid index"}
+      end
+
+    case result do
+      {:ok, body} ->
+        conn
+        |> put_resp_header("content-type", "application/json")
+        |> send_resp(200, Jason.encode!(body))
+
+      {:error, status, message} ->
+        conn
+        |> put_resp_header("content-type", "application/json")
+        |> send_resp(status, Jason.encode!(%{error: message}))
+    end
+  end
+
+  get "/settings/photo_sources/:index/oauth_status" do
+    sources = NervesPhotos.SettingsStore.get(:photo_sources) || []
+
+    result =
+      case Integer.parse(conn.params["index"]) do
+        {idx, ""} when idx >= 0 and idx < length(sources) ->
+          source = Enum.at(sources, idx)
+          state = NervesPhotos.GoogleOAuthState.get(idx)
+
+          case {source[:type], state} do
+            {"google_photos_api", %{device_code: device_code}} ->
+              case NervesPhotos.GoogleOAuth.poll_token(
+                     source[:client_id],
+                     source[:client_secret],
+                     device_code
+                   ) do
+                {:ok, %{refresh_token: rt}} ->
+                  updated = Map.put(source, :refresh_token, rt)
+
+                  NervesPhotos.SettingsStore.put(
+                    :photo_sources,
+                    List.replace_at(sources, idx, updated)
+                  )
+
+                  NervesPhotos.GoogleOAuthState.delete(idx)
+                  %{status: "authorized"}
+
+                :pending ->
+                  %{status: "pending"}
+
+                {:error, reason} ->
+                  NervesPhotos.GoogleOAuthState.delete(idx)
+                  %{status: "error", error: to_string(reason)}
+              end
+
+            _ ->
+              %{status: "not_started"}
+          end
+
+        _ ->
+          %{status: "error", error: "invalid index"}
+      end
+
+    conn
+    |> put_resp_header("content-type", "application/json")
+    |> send_resp(200, Jason.encode!(result))
   end
 
   forward("/current", to: NervesPhotos.CurrentRouter)
@@ -339,19 +434,24 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
+  defp source_type_meta(%{type: "immich"} = source) do
+    host = URI.parse(source[:url] || "").host || source[:url] || ""
+    {"Immich", "source-type-immich", Plug.HTML.html_escape(host)}
+  end
+
+  defp source_type_meta(%{type: "google_photos"}),
+    do: {"Google Photos", "source-type-google", "Shared album"}
+
+  defp source_type_meta(%{type: "google_photos_api"} = source) do
+    status = if source[:refresh_token], do: "Connected", else: "Not connected"
+    {"Google Photos API", "source-type-google", status}
+  end
+
+  defp source_type_meta(source),
+    do: {Plug.HTML.html_escape(source[:type] || ""), "", ""}
+
   defp render_source_row({source, idx}) do
-    {type_label, type_class, desc} =
-      case source[:type] do
-        "immich" ->
-          host = URI.parse(source[:url] || "").host || source[:url] || ""
-          {"Immich", "source-type-immich", Plug.HTML.html_escape(host)}
-
-        "google_photos" ->
-          {"Google Photos", "source-type-google", "Shared album"}
-
-        other ->
-          {Plug.HTML.html_escape(other || ""), "", ""}
-      end
+    {type_label, type_class, desc} = source_type_meta(source)
 
     """
     <div class="source-row" id="source-row-#{idx}">
@@ -391,6 +491,7 @@ defmodule NervesPhotos.SettingsRouter do
     #{source_rows}
     <div id="add-immich-btn" class="add-source-btn" onclick="toggleAddForm('immich')">+ Add Immich Album</div>
     <div id="add-google-btn" class="add-source-btn" onclick="toggleAddForm('google')">+ Add Google Photos Album</div>
+    <div id="add-google-api-btn" class="add-source-btn" onclick="toggleAddForm('google_api')">+ Add Google Photos API Album</div>
     <div id="add-immich-form" style="display:none" class="source-row">
       <div class="inline-form">
         #{render_add_immich_form()}
@@ -401,56 +502,97 @@ defmodule NervesPhotos.SettingsRouter do
         #{render_add_google_form()}
       </div>
     </div>
+    <div id="add-google-api-form" style="display:none" class="source-row">
+      <div class="inline-form">
+        #{render_add_google_api_form()}
+      </div>
+    </div>
     """
   end
 
-  defp render_edit_form(source, idx) do
-    case source[:type] do
-      "immich" ->
-        url = Plug.HTML.html_escape(source[:url] || "")
-        album_id = Plug.HTML.html_escape(source[:album_id] || "")
+  defp render_edit_form(%{type: "immich"} = source, idx) do
+    url = Plug.HTML.html_escape(source[:url] || "")
+    album_id = Plug.HTML.html_escape(source[:album_id] || "")
 
-        """
-        <div style="font-size:13px;font-weight:600;color:#3b82f6;margin-bottom:12px">Edit Immich Album</div>
-        <form onsubmit="submitEditForm(event, #{idx})">
-          <input type="hidden" name="type" value="immich">
-          <label>Server URL
-            <input type="text" name="url" value="#{url}">
-          </label>
-          <label>API Key
-            <input type="text" name="api_key" placeholder="Leave blank to keep current">
-          </label>
-          <label>Album ID
-            <input type="text" name="album_id" value="#{album_id}">
-          </label>
-          <div style="display:flex;gap:8px;margin-top:16px">
-            <button type="submit" class="btn-primary">Save</button>
-            <button type="button" class="btn-secondary" onclick="toggleEdit(#{idx})">Cancel</button>
-          </div>
-        </form>
-        """
-
-      "google_photos" ->
-        share_url = Plug.HTML.html_escape(source[:share_url] || "")
-
-        """
-        <div style="font-size:13px;font-weight:600;color:#10b981;margin-bottom:12px">Edit Google Photos Album</div>
-        <form onsubmit="submitEditForm(event, #{idx})">
-          <input type="hidden" name="type" value="google_photos">
-          <label>Share URL
-            <input type="text" name="share_url" value="#{share_url}">
-          </label>
-          <div style="display:flex;gap:8px;margin-top:16px">
-            <button type="submit" class="btn-primary">Save</button>
-            <button type="button" class="btn-secondary" onclick="toggleEdit(#{idx})">Cancel</button>
-          </div>
-        </form>
-        """
-
-      _ ->
-        ""
-    end
+    """
+    <div style="font-size:13px;font-weight:600;color:#3b82f6;margin-bottom:12px">Edit Immich Album</div>
+    <form onsubmit="submitEditForm(event, #{idx})">
+      <input type="hidden" name="type" value="immich">
+      <label>Server URL
+        <input type="text" name="url" value="#{url}">
+      </label>
+      <label>API Key
+        <input type="text" name="api_key" placeholder="Leave blank to keep current">
+      </label>
+      <label>Album ID
+        <input type="text" name="album_id" value="#{album_id}">
+      </label>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" class="btn-secondary" onclick="toggleEdit(#{idx})">Cancel</button>
+      </div>
+    </form>
+    """
   end
+
+  defp render_edit_form(%{type: "google_photos"} = source, idx) do
+    share_url = Plug.HTML.html_escape(source[:share_url] || "")
+
+    """
+    <div style="font-size:13px;font-weight:600;color:#10b981;margin-bottom:12px">Edit Google Photos Album</div>
+    <form onsubmit="submitEditForm(event, #{idx})">
+      <input type="hidden" name="type" value="google_photos">
+      <label>Share URL
+        <input type="text" name="share_url" value="#{share_url}">
+      </label>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" class="btn-secondary" onclick="toggleEdit(#{idx})">Cancel</button>
+      </div>
+    </form>
+    """
+  end
+
+  defp render_edit_form(%{type: "google_photos_api"} = source, idx) do
+    client_id = Plug.HTML.html_escape(source[:client_id] || "")
+    album_id = Plug.HTML.html_escape(source[:album_id] || "")
+
+    auth_label =
+      if source[:refresh_token], do: "Re-authorize with Google", else: "Authorize with Google"
+
+    auth_status = if source[:refresh_token], do: "Connected", else: "Not connected"
+
+    """
+    <div style="font-size:13px;font-weight:600;color:#10b981;margin-bottom:12px">Edit Google Photos API Album</div>
+    <form onsubmit="submitEditForm(event, #{idx})">
+      <input type="hidden" name="type" value="google_photos_api">
+      <label>Client ID
+        <input type="text" name="client_id" value="#{client_id}">
+      </label>
+      <label>Client Secret
+        <input type="text" name="client_secret" placeholder="Leave blank to keep current">
+      </label>
+      <label>Album ID
+        <input type="text" name="album_id" value="#{album_id}">
+      </label>
+      <p style="font-size:13px;color:#64748b;margin-top:12px">Google account: #{auth_status}</p>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" class="btn-secondary" onclick="toggleEdit(#{idx})">Cancel</button>
+      </div>
+      <div style="margin-top:12px">
+        <button type="button" class="btn-secondary" onclick="startOAuth(#{idx})">#{auth_label}</button>
+      </div>
+      <div id="oauth-status-#{idx}" style="display:none;margin-top:12px;font-size:13px">
+        <p>Visit: <strong><span id="oauth-url-#{idx}"></span></strong></p>
+        <p>Enter code: <strong><span id="oauth-code-#{idx}"></span></strong></p>
+        <p id="oauth-msg-#{idx}">Waiting for authorization...</p>
+      </div>
+    </form>
+    """
+  end
+
+  defp render_edit_form(_source, _idx), do: ""
 
   defp render_add_immich_form do
     """
@@ -490,6 +632,29 @@ defmodule NervesPhotos.SettingsRouter do
     """
   end
 
+  defp render_add_google_api_form do
+    """
+    <div style="font-size:13px;font-weight:600;color:#10b981;margin-bottom:12px">Add Google Photos API Album</div>
+    <form onsubmit="submitAddForm(event)">
+      <input type="hidden" name="type" value="google_photos_api">
+      <label>Client ID
+        <input type="text" name="client_id" placeholder="OAuth Client ID">
+      </label>
+      <label>Client Secret
+        <input type="text" name="client_secret" placeholder="OAuth Client Secret">
+      </label>
+      <label>Album ID
+        <input type="text" name="album_id" placeholder="AF1Qip... from photos.google.com/u/0/album/...">
+      </label>
+      <p style="font-size:12px;color:#94a3b8;margin-top:8px">Save first, then Edit to authorize your Google account.</p>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" class="btn-secondary" onclick="toggleAddForm('google_api')">Cancel</button>
+      </div>
+    </form>
+    """
+  end
+
   defp render_settings_js do
     """
     <script>
@@ -521,7 +686,9 @@ defmodule NervesPhotos.SettingsRouter do
     }
 
     function toggleAddForm(type) {
-      var id = type === 'immich' ? 'add-immich-form' : 'add-google-form';
+      var formMap = {immich: 'add-immich-form', google: 'add-google-form', google_api: 'add-google-api-form'};
+      var id = formMap[type];
+      if (!id) return;
       var form = document.getElementById(id);
       if (!form) return;
       var isOpen = form.style.display !== 'none';
@@ -533,7 +700,7 @@ defmodule NervesPhotos.SettingsRouter do
       document.querySelectorAll('[id^="edit-form-"]').forEach(function(el) {
         el.style.display = 'none';
       });
-      ['add-immich-form','add-google-form'].forEach(function(id) {
+      ['add-immich-form','add-google-form','add-google-api-form'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.style.display = 'none';
       });
@@ -580,6 +747,39 @@ defmodule NervesPhotos.SettingsRouter do
         if (r.ok) { location.reload(); }
         else { r.json().then(function(e) { alert(e.error || 'Save failed'); }); }
       }).catch(function() { alert('Network error. Please try again.'); });
+    }
+
+    function startOAuth(index) {
+      fetch('/settings/photo_sources/' + index + '/authorize', {
+        method: 'POST',
+        headers: {'x-csrf-token': getCsrfToken()}
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.error) { alert('Error: ' + data.error); return; }
+          document.getElementById('oauth-status-' + index).style.display = 'block';
+          document.getElementById('oauth-url-' + index).textContent = data.verification_url;
+          document.getElementById('oauth-code-' + index).textContent = data.user_code;
+          pollOAuth(index, (data.interval || 5) * 1000);
+        })
+        .catch(function() { alert('Failed to start authorization. Check client_id and try again.'); });
+    }
+
+    function pollOAuth(index, intervalMs) {
+      var timer = setInterval(function() {
+        fetch('/settings/photo_sources/' + index + '/oauth_status')
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.status === 'authorized') {
+              clearInterval(timer);
+              document.getElementById('oauth-msg-' + index).textContent = 'Authorized! Reloading...';
+              setTimeout(function() { location.reload(); }, 1500);
+            } else if (data.status === 'error') {
+              clearInterval(timer);
+              document.getElementById('oauth-msg-' + index).textContent = 'Error: ' + data.error;
+            }
+          });
+      }, intervalMs);
     }
     </script>
     """

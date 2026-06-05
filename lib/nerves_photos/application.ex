@@ -24,6 +24,7 @@ defmodule NervesPhotos.Application do
         [
           NervesPhotos.SettingsStore,
           NervesPhotos.UserStore,
+          NervesPhotos.GoogleOAuthState,
           NervesPhotos.SettingsServer
         ]
       end
@@ -35,6 +36,7 @@ defmodule NervesPhotos.Application do
         core = [
           NervesPhotos.SettingsStore,
           NervesPhotos.UserStore,
+          NervesPhotos.GoogleOAuthState,
           NervesPhotos.ConnectivityMonitor,
           NervesPhotos.SettingsServer,
           NervesPhotos.PhotoQueue,

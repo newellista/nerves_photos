@@ -148,6 +148,7 @@ defmodule NervesPhotos.PhotoQueue do
 
   defp source_module(%{type: "immich"}), do: NervesPhotos.Sources.Immich
   defp source_module(%{type: "google_photos"}), do: NervesPhotos.Sources.GooglePhotos
+  defp source_module(%{type: "google_photos_api"}), do: NervesPhotos.Sources.GooglePhotosAPI
 
   defp source_module(source),
     do: raise("PhotoQueue: unknown source type #{inspect(source)}")
