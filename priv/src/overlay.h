@@ -13,7 +13,7 @@ typedef struct {
     int show_empty_album;
 } overlay_params_t;
 
-void fc_init_fonts(void);
+void fc_init_fonts(const char *font_dir);
 void draw_overlays(cairo_t *cr, int width, int height, const overlay_params_t *params);
 
 #endif

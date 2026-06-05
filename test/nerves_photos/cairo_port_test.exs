@@ -112,12 +112,20 @@ defmodule NervesPhotos.CairoPortTest do
         {NervesPhotos.CairoPort, [open_port_fn: fn -> capturing_port(test_pid) end]}
       )
 
+    font_dir = "/test/fonts"
+
     Task.start(fn ->
-      CairoPort.init_display(pid, width: 1920, height: 1080, display_mode: :fbdev)
+      CairoPort.init_display(pid,
+        width: 1920,
+        height: 1080,
+        display_mode: :fbdev,
+        font_dir: font_dir
+      )
     end)
 
     assert_receive {:captured, data}, 500
-    assert <<0x01, 1920::big-16, 1080::big-16, 1>> == data
+    font_dir_len = byte_size(font_dir)
+    assert <<0x01, 1920::big-16, 1080::big-16, 1, ^font_dir_len::8, ^font_dir::binary>> = data
   end
 
   test "CMD_RENDER_FRAME binary encoding with weather overlay" do
