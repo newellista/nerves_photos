@@ -138,7 +138,7 @@ defmodule NervesPhotos.CairoPortTest do
     Task.start(fn -> CairoPort.render_frame(pid, params) end)
     assert_receive {:captured, data}, 500
 
-    <<cmd, transition, _t::32, crop, flags, rest::binary>> = data
+    <<cmd, transition, _t::32, crop, _from_slot, _to_slot, flags, rest::binary>> = data
     assert cmd == 0x04
     assert transition == 0
     assert crop == 1
@@ -175,7 +175,7 @@ defmodule NervesPhotos.CairoPortTest do
     Task.start(fn -> CairoPort.render_frame(pid, params) end)
     assert_receive {:captured, data}, 500
 
-    <<0x04, transition, _t::32, crop, flags, _rest::binary>> = data
+    <<0x04, transition, _t::32, crop, _from_slot, _to_slot, flags, _rest::binary>> = data
     assert transition == 2
     assert crop == 0
     assert (flags &&& 0x01) != 0
@@ -183,6 +183,31 @@ defmodule NervesPhotos.CairoPortTest do
     assert (flags &&& 0x04) != 0
     assert (flags &&& 0x08) != 0
     assert (flags &&& 0x10) != 0
+  end
+
+  test "CMD_RENDER_FRAME encodes from_slot and to_slot" do
+    test_pid = self()
+
+    pid =
+      start_supervised!(
+        {NervesPhotos.CairoPort, [open_port_fn: fn -> capturing_port(test_pid) end]}
+      )
+
+    params = %{
+      transition_type: :fade_to_black,
+      t: 0.5,
+      crop_mode: :letterbox,
+      from_slot: 1,
+      to_slot: 0,
+      overlays: %{}
+    }
+
+    Task.start(fn -> CairoPort.render_frame(pid, params) end)
+    assert_receive {:captured, data}, 500
+
+    <<0x04, _transition, _t::32, _crop, from_slot, to_slot, _flags, _rest::binary>> = data
+    assert from_slot == 1
+    assert to_slot == 0
   end
 
   test "CMD_FREE_SLOT binary encoding is correct" do

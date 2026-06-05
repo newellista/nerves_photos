@@ -28,8 +28,8 @@ defmodule NervesPhotos.FrameCompositorTest do
       {:reply, :ok, [{:free_slot, slot} | calls]}
     end
 
-    def handle_call({:render_frame, _params}, _from, calls) do
-      {:reply, :ok, [:render_frame | calls]}
+    def handle_call({:render_frame, params}, _from, calls) do
+      {:reply, :ok, [{:render_frame, params} | calls]}
     end
 
     def handle_call(:get_dimensions, _from, calls) do
@@ -158,7 +158,7 @@ defmodule NervesPhotos.FrameCompositorTest do
     Process.sleep(300)
 
     port_calls = MockCairoPort.calls(port)
-    assert :render_frame in port_calls
+    assert Enum.any?(port_calls, &match?({:render_frame, _}, &1))
   end
 
   test "transition completes: frees old slot and returns to idle" do
@@ -313,6 +313,65 @@ defmodule NervesPhotos.FrameCompositorTest do
     state = :sys.get_state(compositor)
     assert state.metadata.date == date
     assert state.metadata.location == "Portland, OR"
+  end
+
+  test "render_frame is called with current_slot as from and next_slot as to" do
+    port = make_port(:slot_order_test)
+
+    compositor =
+      make_compositor(port,
+        advance_fn: fn -> make_asset() end
+      )
+
+    initial_state = :sys.get_state(compositor)
+    initial_current = initial_state.current_slot
+    initial_next = initial_state.next_slot
+
+    send(compositor, {:slide_timer, :next_photo})
+    Process.sleep(100)
+
+    port_calls = MockCairoPort.calls(port)
+
+    render_params =
+      port_calls
+      |> Enum.filter(&match?({:render_frame, _}, &1))
+      |> List.first()
+      |> elem(1)
+
+    assert render_params.from_slot == initial_current
+    assert render_params.to_slot == initial_next
+  end
+
+  test "render_frame uses swapped slots on second transition" do
+    port = make_port(:slot_order_swap_test)
+
+    compositor =
+      make_compositor(port,
+        advance_fn: fn -> make_asset() end
+      )
+
+    initial_state = :sys.get_state(compositor)
+    first_current = initial_state.current_slot
+    first_next = initial_state.next_slot
+
+    # Complete first transition
+    send(compositor, {:slide_timer, :next_photo})
+    Process.sleep(800)
+
+    # Second transition: slots should be swapped
+    send(compositor, {:slide_timer, :next_photo})
+    Process.sleep(100)
+
+    port_calls = MockCairoPort.calls(port)
+
+    second_render_params =
+      port_calls
+      |> Enum.filter(&match?({:render_frame, _}, &1))
+      |> List.last()
+      |> elem(1)
+
+    assert second_render_params.from_slot == first_next
+    assert second_render_params.to_slot == first_current
   end
 
   test "unknown messages are ignored" do
